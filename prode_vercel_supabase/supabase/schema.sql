@@ -1,7 +1,5 @@
 -- PRODE MUNDIALISTA - SUPABASE
--- 1) Crear un proyecto en Supabase.
--- 2) Ir a SQL Editor.
--- 3) Pegar y ejecutar todo este archivo.
+-- Podés ejecutar este archivo completo sin borrar datos.
 
 create extension if not exists pgcrypto;
 
@@ -17,6 +15,9 @@ create table if not exists public.matches (
   locked boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table public.matches add column if not exists went_penalties boolean not null default false;
+alter table public.matches add column if not exists advance_winner text check (advance_winner is null or advance_winner in ('A','B'));
 
 create table if not exists public.participants (
   id uuid primary key default gen_random_uuid(),
@@ -35,6 +36,17 @@ create table if not exists public.predictions (
   unique (participant_id, match_id)
 );
 
+alter table public.predictions add column if not exists advance_pick text check (advance_pick is null or advance_pick in ('A','B'));
+
+-- Si ya había pronósticos cargados sin advance_pick, se completa automáticamente según el resultado pronosticado.
+update public.predictions
+set advance_pick = case
+  when pred_a > pred_b then 'A'
+  when pred_b > pred_a then 'B'
+  else advance_pick
+end
+where advance_pick is null;
+
 -- Actualiza updated_at automáticamente cuando cambian los pronósticos.
 create or replace function public.set_updated_at()
 returns trigger as $$
@@ -52,22 +64,22 @@ for each row execute function public.set_updated_at();
 -- Partidos iniciales. Cambiá los nombres desde Supabase si querés.
 insert into public.matches (match_no, round, team_a, team_b)
 values
-  (1, '16avos', 'Egipto', 'Croacia'),
-  (2, '16avos', 'Equipo 3', 'Equipo 4'),
-  (3, '16avos', 'Equipo 5', 'Equipo 6'),
-  (4, '16avos', 'Equipo 7', 'Equipo 8'),
-  (5, '16avos', 'Equipo 9', 'Equipo 10'),
-  (6, '16avos', 'Equipo 11', 'Equipo 12'),
-  (7, '16avos', 'Equipo 13', 'Equipo 14'),
-  (8, '16avos', 'Equipo 15', 'Equipo 16'),
-  (9, '16avos', 'Equipo 17', 'Equipo 18'),
-  (10, '16avos', 'Equipo 19', 'Equipo 20'),
-  (11, '16avos', 'Equipo 21', 'Equipo 22'),
-  (12, '16avos', 'Equipo 23', 'Equipo 24'),
-  (13, '16avos', 'Equipo 25', 'Equipo 26'),
-  (14, '16avos', 'Equipo 27', 'Equipo 28'),
-  (15, '16avos', 'Equipo 29', 'Equipo 30'),
-  (16, '16avos', 'Equipo 31', 'Equipo 32')
+  (1, '16avos', 'Alemania', '3A/B/C/D/F'),
+  (2, '16avos', '1I', '3C/D/F/G/H'),
+  (3, '16avos', 'Sudáfrica', 'Canadá'),
+  (4, '16avos', 'Países Bajos', 'Marruecos'),
+  (5, '16avos', '2K', '2L'),
+  (6, '16avos', '1H', '2J'),
+  (7, '16avos', 'Estados Unidos', 'Bosnia Herzegovina'),
+  (8, '16avos', '1G', '3A/E/H/I/J'),
+  (9, '16avos', 'Brasil', 'Japón'),
+  (10, '16avos', 'Costa de Marfil', '2I'),
+  (11, '16avos', 'México', '3C/E/F/H/I'),
+  (12, '16avos', '1L', '3E/H/I/J/K'),
+  (13, '16avos', 'Argentina', '2H'),
+  (14, '16avos', 'Australia', '2G'),
+  (15, '16avos', 'Suiza', '3E/F/G/I/J'),
+  (16, '16avos', '1K', '3D/E/I/J/L')
 on conflict (match_no) do nothing;
 
 -- Seguridad básica.
@@ -104,7 +116,8 @@ using (true);
 create policy "Alta pronosticos abiertos"
 on public.predictions for insert
 with check (
-  exists (
+  advance_pick in ('A','B')
+  and exists (
     select 1 from public.matches m
     where m.id = predictions.match_id
       and m.locked = false
@@ -125,7 +138,8 @@ using (
   )
 )
 with check (
-  exists (
+  advance_pick in ('A','B')
+  and exists (
     select 1 from public.matches m
     where m.id = predictions.match_id
       and m.locked = false

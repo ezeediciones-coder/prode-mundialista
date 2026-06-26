@@ -1,113 +1,42 @@
-PRODE MUNDIALISTA CON VERCEL + SUPABASE
-=======================================
+PRODE MUNDIALISTA - VERCEL + SUPABASE
 
-Qué incluye
------------
-- Página web con diseño mundialista.
-- Formulario para cargar pronósticos.
-- Ranking en vivo con todos los registrados.
-- Puntaje automático:
-  * Resultado exacto: +6 puntos.
-  * Acertar ganador sin resultado exacto: +3 puntos.
-  * Empate exacto: +6 puntos.
-  * Empate sin resultado exacto: +3 puntos.
-- Panel admin para cargar resultados reales.
-- Base de datos en Supabase.
-- Deploy en Vercel.
+Versión: llave estilo mundialista + admin separado + penales + puntos por clasificado.
 
+PUNTAJE
+- Resultado exacto: +6 puntos.
+- Ganador o empate correcto sin resultado exacto: +3 puntos.
+- Equipo que avanza de ronda: +3 puntos extra.
 
-PASO 1 - Crear la base en Supabase
-----------------------------------
-1. Entrá a Supabase y creá un proyecto nuevo.
-2. Entrá a SQL Editor.
-3. Abrí el archivo: supabase/schema.sql
-4. Copiá todo el contenido y ejecutalo.
+Ejemplo:
+- Real: Argentina 2 - 1 Equipo X. Avanza Argentina.
+- Prode: Argentina 2 - 1 Equipo X => 6 + 3 = 9 puntos.
+- Prode: Argentina 1 - 0 Equipo X => 3 + 3 = 6 puntos.
+- Prode: 1 - 1 y avanza Argentina => 0 por resultado si no empataron, +3 por clasificado.
 
-Eso crea 3 tablas:
-- matches: partidos.
-- participants: participantes.
-- predictions: pronósticos.
+URLS
+- Página pública: https://tu-dominio.vercel.app
+- Panel admin: https://tu-dominio.vercel.app/admin
 
-También carga 16 partidos de ejemplo.
-Después podés cambiar los nombres de los equipos desde Supabase:
-Table Editor > matches.
+SI YA TENÍAS LA VERSIÓN ANTERIOR INSTALADA
+1. Subí/reemplazá esta carpeta completa en GitHub: prode_vercel_supabase
+2. En Supabase abrí SQL Editor.
+3. Pegá y ejecutá: supabase/migracion_penales_y_clasificados.sql
+4. Vercel debería redeployar solo. Si no, entrá a Deployments y hacé Redeploy del último deploy.
 
+SI LO INSTALÁS DESDE CERO
+1. Crear proyecto en Supabase.
+2. SQL Editor > pegar y ejecutar supabase/schema.sql
+3. Subir este proyecto a GitHub.
+4. Importar en Vercel.
+5. Root Directory: prode_vercel_supabase
+6. Variables de entorno en Vercel:
+   VITE_SUPABASE_URL=https://xxxxx.supabase.co
+   VITE_SUPABASE_ANON_KEY=sb_publishable_...
+   SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
+   ADMIN_PIN=1234
 
-PASO 2 - Copiar las keys de Supabase
-------------------------------------
-En Supabase entrá a:
-Project Settings > API
-
-Copiá:
-- Project URL
-- anon public key
-- service_role key
-
-IMPORTANTE:
-La anon key puede ir en el frontend.
-La service_role key NO se comparte nunca. Solo va en Vercel como variable privada.
-
-
-PASO 3 - Subir el proyecto a Vercel
------------------------------------
-Opción recomendada:
-1. Subí esta carpeta a un repositorio de GitHub.
-2. En Vercel elegí Add New Project.
-3. Importá el repo.
-4. Framework: Vite.
-5. Build command: npm run build
-6. Output directory: dist
-
-
-PASO 4 - Variables de entorno en Vercel
----------------------------------------
-En Vercel entrá al proyecto:
-Settings > Environment Variables
-
-Agregá estas 4 variables:
-
-VITE_SUPABASE_URL
-Valor: la URL de tu proyecto Supabase.
-
-VITE_SUPABASE_ANON_KEY
-Valor: la anon public key de Supabase.
-
-SUPABASE_SERVICE_ROLE_KEY
-Valor: la service_role key de Supabase.
-
-ADMIN_PIN
-Valor: el PIN privado que vas a usar para cargar resultados reales.
-Ejemplo: 4589
-
-Después de cargar las variables, hacé redeploy.
-
-
-PASO 5 - Usar la página
------------------------
-- Compartís el link de Vercel con tu familia.
-- Cada persona escribe su nombre y carga los resultados.
-- En Ranking se ven todos los registrados.
-- Cuando termine un partido, entrás a Resultados > Cargar resultados como admin.
-- Ponés el PIN, cargás el resultado real y se actualiza el ranking.
-
-
-Cómo editar partidos
---------------------
-Desde Supabase:
-Table Editor > matches
-
-Editá:
-- team_a
-- team_b
-- match_no
-- round
-
-No hace falta tocar código para cambiar equipos.
-
-
-Notas importantes
------------------
-- Cuando cargás un resultado real, el partido queda bloqueado.
-- Si alguien vuelve a cargar con el mismo nombre, se actualiza su prode y no se duplica.
-- Es ideal para uso familiar. No es un sistema con login individual fuerte.
-- Si querés máxima seguridad para que nadie edite el prode de otro, después se le puede agregar login por WhatsApp/email o códigos personales.
+NOTAS
+- El admin carga resultado real, si fue a penales y quién avanzó.
+- Si el resultado real no es empate, el sistema toma automáticamente como clasificado al ganador del marcador.
+- Si el resultado real es empate, el admin debe elegir quién avanzó.
+- Si el participante pronostica empate, debe elegir quién avanza.
