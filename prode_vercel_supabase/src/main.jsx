@@ -207,6 +207,133 @@ function datetimeLocalToIso(value) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+async function callParticipantAccess(payload) {
+  const response = await fetch('/api/participant-access', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(body.error || 'No pude procesar la solicitud.');
+  }
+
+  return body;
+}
+
+const DEFAULT_PRODE_SETTINGS = {
+  id: 'main',
+  prize_enabled: true,
+  prize_pool: 0,
+  prize_currency: '$',
+  winners_count: 3,
+  prize_distribution: [
+    { place: 1, percent: 50 },
+    { place: 2, percent: 30 },
+    { place: 3, percent: 20 },
+  ],
+  prize_note: 'El pozo se reparte entre los primeros puestos del ranking.',
+};
+
+function normalizePrizeSettings(row) {
+  if (!row) return DEFAULT_PRODE_SETTINGS;
+
+  const winnersCount = Math.min(10, Math.max(1, Number(row.winners_count || 3)));
+  const rawDistribution = Array.isArray(row.prize_distribution)
+    ? row.prize_distribution
+    : DEFAULT_PRODE_SETTINGS.prize_distribution;
+
+  const prizeDistribution = Array.from({ length: winnersCount }, (_, index) => {
+    const place = index + 1;
+    const found = rawDistribution.find((item) => Number(item.place) === place);
+    return {
+      place,
+      percent: Number(found?.percent || 0),
+    };
+  });
+
+  return {
+    ...DEFAULT_PRODE_SETTINGS,
+    ...row,
+    prize_enabled: Boolean(row.prize_enabled),
+    prize_pool: Number(row.prize_pool || 0),
+    prize_currency: row.prize_currency || '$',
+    winners_count: winnersCount,
+    prize_distribution: prizeDistribution,
+    prize_note: row.prize_note || DEFAULT_PRODE_SETTINGS.prize_note,
+  };
+}
+
+function formatPrizeAmount(settings, amount) {
+  const currency = settings?.prize_currency || '$';
+  const value = Number(amount || 0);
+  return `${currency}${value.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
+}
+
+function buildPrizeRows(settings) {
+  const normalized = normalizePrizeSettings(settings);
+  return normalized.prize_distribution.map((item) => {
+    const amount = normalized.prize_pool > 0 ? (normalized.prize_pool * Number(item.percent || 0)) / 100 : 0;
+    return {
+      place: Number(item.place),
+      percent: Number(item.percent || 0),
+      amount,
+    };
+  });
+}
+
+function defaultDistributionForWinners(count) {
+  if (Number(count) === 3) {
+    return [
+      { place: 1, percent: 50 },
+      { place: 2, percent: 30 },
+      { place: 3, percent: 20 },
+    ];
+  }
+
+  if (Number(count) === 5) {
+    return [
+      { place: 1, percent: 40 },
+      { place: 2, percent: 25 },
+      { place: 3, percent: 20 },
+      { place: 4, percent: 10 },
+      { place: 5, percent: 5 },
+    ];
+  }
+
+  const base = Math.floor(100 / Number(count));
+  let remainder = 100 - base * Number(count);
+  return Array.from({ length: Number(count) }, (_, index) => {
+    const extra = remainder > 0 ? 1 : 0;
+    remainder -= extra;
+    return { place: index + 1, percent: base + extra };
+  });
+}
+
+function whatsappLinkForName(name) {
+  const clean = name.trim().replace(/\s+/g, ' ');
+  const message = `Hola, soy ${clean}. Me gustaría solicitar mi código para participar del prode familiar.`;
+  return `https://wa.me/5493755659363?text=${encodeURIComponent(message)}`;
+}
+
+async function callProdeSettings(payload) {
+  const response = await fetch('/api/prode-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(body.error || 'No pude guardar la configuración de premios.');
+  }
+
+  return body;
+}
+
 function PointsTooltip() {
   return (
     <span className="tooltipWrap" tabIndex="0" title="Primero suma el resultado del partido. Si va a penales, podés sumar extra.">
@@ -260,10 +387,11 @@ function RulesPanel({ compact = false }) {
   );
 }
 
-function useProdeData() {
+function useProdeData({ admin = false } = {}) {
   const [matches, setMatches] = useState([]);
   const [participants, setParticipants] = useState([]);
   const [predictions, setPredictions] = useState([]);
+  const [settings, setSettings] = useState(DEFAULT_PRODE_SETTINGS);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -275,19 +403,26 @@ function useProdeData() {
     }
 
     setLoading(true);
-    const [mRes, pRes, prRes] = await Promise.all([
+
+    const participantColumns = admin
+      ? '*'
+      : 'id,name,name_key,status,created_at';
+
+    const [mRes, pRes, prRes, sRes] = await Promise.all([
       supabase.from('matches').select('*').order('match_no', { ascending: true }),
-      supabase.from('participants').select('*').order('created_at', { ascending: true }),
+      supabase.from('participants').select(participantColumns).order('created_at', { ascending: true }),
       supabase.from('predictions').select('*'),
+      supabase.from('prode_settings').select('*').eq('id', 'main').maybeSingle(),
     ]);
 
-    if (mRes.error || pRes.error || prRes.error) {
-      setStatus('No pude cargar los datos. Revisá Supabase y las políticas RLS.');
-      console.error(mRes.error || pRes.error || prRes.error);
+    if (mRes.error || pRes.error || prRes.error || sRes.error) {
+      setStatus('No pude cargar los datos. Revisá Supabase, las políticas RLS y la tabla prode_settings.');
+      console.error(mRes.error || pRes.error || prRes.error || sRes.error);
     } else {
       setMatches(mRes.data || []);
       setParticipants(pRes.data || []);
       setPredictions(prRes.data || []);
+      setSettings(normalizePrizeSettings(sRes.data));
       setStatus('');
     }
     setLoading(false);
@@ -301,18 +436,19 @@ function useProdeData() {
     if (!supabase) return undefined;
 
     const channel = supabase
-      .channel('prode-live')
+      .channel(admin ? 'prode-live-admin' : 'prode-live-public')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, loadAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, loadAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prode_settings' }, loadAll)
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [admin]);
 
-  return { matches, participants, predictions, status, setStatus, loading, loadAll };
+  return { matches, participants, predictions, settings, status, setStatus, loading, loadAll };
 }
 
 function Header({ admin = false }) {
@@ -339,9 +475,13 @@ function Header({ admin = false }) {
   );
 }
 
-function RankingPanel({ participants, predictions, matches }) {
+function RankingPanel({ participants, predictions, matches, settings }) {
+  const prizeSettings = normalizePrizeSettings(settings);
+  const prizeRows = useMemo(() => buildPrizeRows(prizeSettings), [prizeSettings]);
+
   const ranking = useMemo(() => {
     return participants
+      .filter((participant) => !participant.status || participant.status === 'approved')
       .map((participant) => {
         const userPredictions = predictions.filter((p) => p.participant_id === participant.id);
         let points = 0;
@@ -383,6 +523,24 @@ function RankingPanel({ participants, predictions, matches }) {
         <p>En empate, gana quien tenga más exactos y después más clasificados acertados.</p>
       </div>
 
+      {prizeSettings.prize_enabled && (
+        <div className="rulesGrid prizeGrid">
+          <div className="ruleCard">
+            <strong>🏆 Pozo acumulado</strong>
+            <span><b>{formatPrizeAmount(prizeSettings, prizeSettings.prize_pool)}</b></span>
+            <span>{prizeSettings.prize_note}</span>
+          </div>
+
+          {prizeRows.map((row) => (
+            <div key={row.place} className="ruleCard">
+              <strong>{row.place}° puesto</strong>
+              <span><b>{row.percent}%</b> del pozo</span>
+              <span>{formatPrizeAmount(prizeSettings, row.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="rankingList">
         {ranking.length === 0 && <p>Todavía no hay participantes registrados.</p>}
         {ranking.map((row, index) => (
@@ -392,7 +550,12 @@ function RankingPanel({ participants, predictions, matches }) {
               <strong>{row.name}</strong>
               <span>{row.exacts} exactos · {row.advanceOnly} clasificados · {row.predictionsCount} pronósticos</span>
             </div>
-            <div className="points">{row.points} pts</div>
+            <div className="points">
+              <span>{row.points} pts</span>
+              {prizeSettings.prize_enabled && index < prizeSettings.winners_count && prizeRows[index] && (
+                <small>{formatPrizeAmount(prizeSettings, prizeRows[index].amount)}</small>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -701,15 +864,40 @@ function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, u
 }
 
 function PublicApp() {
-  const { matches, participants, predictions, status, setStatus, loading, loadAll } = useProdeData();
+  const { matches, participants, predictions, settings, status, setStatus, loading, loadAll } = useProdeData();
   const [name, setName] = useState(() => window.localStorage.getItem('prode_nombre') || '');
+  const [accessCode, setAccessCode] = useState(() => window.localStorage.getItem('prode_codigo') || '');
+  const [accessMode, setAccessMode] = useState(() => (window.localStorage.getItem('prode_acceso_ok') === '1' ? 'login' : 'intro'));
+  const [requestSent, setRequestSent] = useState(false);
+  const [accessGranted, setAccessGranted] = useState(false);
+  const [accessParticipant, setAccessParticipant] = useState(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [autoCheckedAccess, setAutoCheckedAccess] = useState(false);
   const [formScores, setFormScores] = useState({});
   const [tab, setTab] = useState('cargar');
 
   const myParticipant = useMemo(() => {
-    const key = normalizeName(name || '');
-    return participants.find((p) => p.name_key === key);
-  }, [participants, name]);
+    if (!accessGranted) return null;
+    const key = normalizeName(accessParticipant?.name || name || '');
+    return (
+      participants.find((p) => p.id === accessParticipant?.id) ||
+      participants.find((p) => p.name_key === key && (!p.status || p.status === 'approved')) ||
+      accessParticipant
+    );
+  }, [participants, name, accessParticipant, accessGranted]);
+
+  useEffect(() => {
+    if (autoCheckedAccess) return;
+    setAutoCheckedAccess(true);
+
+    const savedOk = window.localStorage.getItem('prode_acceso_ok') === '1';
+    const savedName = window.localStorage.getItem('prode_nombre') || '';
+    const savedCode = window.localStorage.getItem('prode_codigo') || '';
+
+    if (savedOk && savedName && savedCode) {
+      validateAccess({ silent: true });
+    }
+  }, [autoCheckedAccess]);
 
   useEffect(() => {
     if (!myParticipant) return;
@@ -726,6 +914,110 @@ function PublicApp() {
     });
     setFormScores((prev) => ({ ...prev, ...next }));
   }, [myParticipant, predictions]);
+
+  function resetAccessState({ keepFields = true } = {}) {
+    setAccessGranted(false);
+    setAccessParticipant(null);
+    setFormScores({});
+    window.localStorage.removeItem('prode_acceso_ok');
+
+    if (!keepFields) {
+      setName('');
+      setAccessCode('');
+      setAccessMode('intro');
+      setRequestSent(false);
+      window.localStorage.removeItem('prode_nombre');
+      window.localStorage.removeItem('prode_codigo');
+    }
+  }
+
+  function handleNameChange(value) {
+    setName(value);
+    setRequestSent(false);
+    resetAccessState({ keepFields: true });
+  }
+
+  function handleCodeChange(value) {
+    setAccessCode(value.replace(/\D/g, '').slice(0, 6));
+    setAccessMode('login');
+    resetAccessState({ keepFields: true });
+  }
+
+  async function requestAccess() {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    if (!clean) {
+      setStatus('Escribí tu nombre para solicitar participación.');
+      return;
+    }
+
+    setAccessLoading(true);
+    setStatus('Enviando solicitud...');
+
+    try {
+      const body = await callParticipantAccess({
+        action: 'request_access',
+        name: clean,
+      });
+
+      setName(clean);
+      window.localStorage.setItem('prode_nombre', clean);
+      setRequestSent(true);
+
+      if (body.status === 'approved') {
+        setAccessMode('login');
+        setStatus('Ya estás aprobado. Ingresá tu código de acceso para cargar el prode.');
+      } else if (body.status === 'rejected') {
+        setAccessMode('intro');
+        setStatus(body.message || 'Tu solicitud fue rechazada.');
+      } else {
+        setAccessMode('whatsapp');
+        setStatus('Solicitud registrada. Ahora pedime tu código por WhatsApp.');
+      }
+
+      await loadAll();
+    } catch (error) {
+      setStatus(error.message || 'No pude enviar la solicitud.');
+    } finally {
+      setAccessLoading(false);
+    }
+  }
+
+  async function validateAccess(options = {}) {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    const code = String(accessCode || '').trim();
+
+    if (!clean || !code) {
+      if (!options.silent) setStatus('Ingresá tu nombre y tu código de acceso.');
+      return;
+    }
+
+    setAccessLoading(true);
+    if (!options.silent) setStatus('Validando acceso...');
+
+    try {
+      const body = await callParticipantAccess({
+        action: 'validate_access',
+        name: clean,
+        code,
+      });
+
+      setName(clean);
+      setAccessParticipant(body.participant);
+      setAccessGranted(true);
+      setAccessMode('granted');
+      window.localStorage.setItem('prode_nombre', clean);
+      window.localStorage.setItem('prode_codigo', code);
+      window.localStorage.setItem('prode_acceso_ok', '1');
+
+      if (!options.silent) setStatus('✅ Acceso habilitado. Ya podés cargar o editar tu prode.');
+      await loadAll();
+    } catch (error) {
+      resetAccessState({ keepFields: true });
+      if (!options.silent) setStatus(error.message || 'No pude validar el acceso.');
+    } finally {
+      setAccessLoading(false);
+    }
+  }
 
   function updateScore(matchId, side, value) {
     const clean = safeNumberValue(value);
@@ -767,10 +1059,15 @@ function PublicApp() {
     e.preventDefault();
     setStatus('');
 
-    const cleanName = name.trim().replace(/\s+/g, ' ');
-    const nameKey = normalizeName(cleanName);
-    if (!cleanName) {
-      setStatus('Escribí tu nombre para cargar el prode.');
+    const participant = myParticipant;
+
+    if (!accessGranted || !participant?.id) {
+      setStatus('Primero ingresá con tu nombre y código aprobado.');
+      return;
+    }
+
+    if (participant.status && participant.status !== 'approved') {
+      setStatus('Tu usuario todavía no está aprobado para participar.');
       return;
     }
 
@@ -804,27 +1101,6 @@ function PublicApp() {
 
     setStatus('Guardando prode...');
 
-    let participant = participants.find((p) => p.name_key === nameKey);
-    if (!participant) {
-      const { data, error } = await supabase
-        .from('participants')
-        .insert({ name: cleanName, name_key: nameKey })
-        .select('*')
-        .single();
-
-      if (error) {
-        const retry = await supabase.from('participants').select('*').eq('name_key', nameKey).maybeSingle();
-        if (retry.error || !retry.data) {
-          console.error(error);
-          setStatus('No pude crear el participante. Revisá Supabase.');
-          return;
-        }
-        participant = retry.data;
-      } else {
-        participant = data;
-      }
-    }
-
     const rows = openMatches.map((m) => {
       const row = formScores[m.id];
       const o = outcome(row.a, row.b);
@@ -850,8 +1126,8 @@ function PublicApp() {
       return;
     }
 
-    window.localStorage.setItem('prode_nombre', cleanName);
-    setStatus('¡Listo! Tu prode quedó guardado. Cuando vuelvas a entrar, escribí el mismo nombre o se cargará automáticamente en este dispositivo.');
+    window.localStorage.setItem('prode_nombre', participant.name || name.trim());
+    setStatus('¡Listo! Tu prode quedó guardado. Podés volver a entrar con tu nombre y código.');
     await loadAll();
     setTab('ranking');
   }
@@ -871,46 +1147,423 @@ function PublicApp() {
       {loading && <div className="status">Cargando datos...</div>}
 
       {tab === 'cargar' && (
-        <form className="panel formPanel" onSubmit={submitPredictions}>
-          <div className="field nameField">
-            <label>Nombre *</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Eze, Pau..."
-              autoComplete="name"
-            />
-            {myParticipant && <small>Ya tenés un prode guardado. Si volvés a enviar, se actualiza.</small>}
-          </div>
+        <>
+          <section className="panel formPanel">
+            <div className="sectionTitle">
+              <h2>Acceso al prode</h2>
+              <p>Para participar necesitás estar aprobado por el admin y entrar con tu código personal.</p>
+            </div>
 
-          <div className="sectionTitle">
-            <h2>Llave mundialista <PointsTooltip /></h2>
-            <p>Poné tu resultado. Si pronosticás empate, elegí quién avanza y podés cargar penales para intentar el +6.</p>
-          </div>
+            {!accessGranted ? (
+              <div className="field nameField">
+                {accessMode === 'intro' && (
+                  <>
+                    <button className="primary" type="button" onClick={() => setAccessMode('name')}>
+                      Quiero participar del prode familiar
+                    </button>
+                    <button className="ghost" type="button" onClick={() => setAccessMode('login')}>
+                      Ya tengo mi código
+                    </button>
+                    <small>
+                      Para jugar necesitás pedir acceso. Si te conozco, te apruebo desde el panel admin y te paso tu código por WhatsApp.
+                    </small>
+                  </>
+                )}
 
-          <BracketBoard
-            matches={matches}
-            mode="public"
-            formScores={formScores}
-            updateScore={updateScore}
-            updateAdvance={updateAdvance}
-            updatePenaltyScore={updatePenaltyScore}
-            participant={myParticipant}
-            predictions={predictions}
-          />
+                {accessMode === 'name' && (
+                  <>
+                    <label>Ingresá tu nombre acá</label>
+                    <input
+                      value={name}
+                      onChange={(e) => handleNameChange(e.target.value)}
+                      placeholder="Ej: Eze, Pau..."
+                      autoComplete="name"
+                    />
 
-          <button className="primary floatingSave" type="submit">Guardar mi prode</button>
-        </form>
+                    <div className="accessActions">
+                      <button className="primary" type="button" onClick={requestAccess} disabled={accessLoading}>
+                        Continuar
+                      </button>
+                      <button className="ghost" type="button" onClick={() => setAccessMode('intro')} disabled={accessLoading}>
+                        Volver
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {accessMode === 'whatsapp' && (
+                  <>
+                    <div className="savedHint">
+                      ✅ Listo, <b>{name}</b>. Ahora solicitá tu código de acceso por WhatsApp.
+                    </div>
+
+                    <a className="primary" href={whatsappLinkForName(name)} target="_blank" rel="noreferrer">
+                      Solicitar código por WhatsApp
+                    </a>
+
+                    <div className="accessActions">
+                      <button className="ghost" type="button" onClick={() => setAccessMode('login')}>
+                        Ya tengo mi código
+                      </button>
+                      <button className="ghost" type="button" onClick={() => setAccessMode('name')}>
+                        Cambiar nombre
+                      </button>
+                    </div>
+
+                    <small>
+                      El mensaje de WhatsApp se completa solo con tu nombre. Cuando el admin te apruebe, te responde con tu código.
+                    </small>
+                  </>
+                )}
+
+                {accessMode === 'login' && (
+                  <>
+                    <label>Nombre *</label>
+                    <input
+                      value={name}
+                      onChange={(e) => handleNameChange(e.target.value)}
+                      placeholder="Ej: Eze, Pau..."
+                      autoComplete="name"
+                    />
+
+                    <label>Código de acceso</label>
+                    <input
+                      value={accessCode}
+                      onChange={(e) => handleCodeChange(e.target.value)}
+                      placeholder="Ej: 482913"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                    />
+
+                    <div className="accessActions">
+                      <button className="primary" type="button" onClick={() => validateAccess()} disabled={accessLoading}>
+                        Ingresar al prode
+                      </button>
+                      <button className="ghost" type="button" onClick={() => setAccessMode('intro')} disabled={accessLoading}>
+                        Volver
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="savedHint">
+                ✅ Acceso aprobado para <b>{myParticipant?.name || name}</b>.
+                <button className="ghost smallClear" type="button" onClick={() => resetAccessState({ keepFields: false })}>
+                  Cambiar usuario
+                </button>
+              </div>
+            )}
+          </section>
+
+          {accessGranted && (
+            <form className="panel formPanel" onSubmit={submitPredictions}>
+              <div className="sectionTitle">
+                <h2>Llave mundialista</h2>
+                <p>Poné tu resultado. Si pronosticás empate, elegí quién avanza y podés cargar penales para sumar extra.</p>
+              </div>
+
+              <BracketBoard
+                matches={matches}
+                mode="public"
+                formScores={formScores}
+                updateScore={updateScore}
+                updateAdvance={updateAdvance}
+                updatePenaltyScore={updatePenaltyScore}
+                participant={myParticipant}
+                predictions={predictions}
+              />
+
+              <button className="primary floatingSave" type="submit">Guardar mi prode</button>
+            </form>
+          )}
+        </>
       )}
 
-      {tab === 'ranking' && <RankingPanel participants={participants} predictions={predictions} matches={matches} />}
+      {tab === 'ranking' && <RankingPanel participants={participants} predictions={predictions} matches={matches} settings={settings} />}
       {tab === 'resultados' && <ResultsPanel matches={matches} />}
     </main>
   );
 }
 
+function PrizeAdminPanel({ settings, adminPin, setStatus, loadAll }) {
+  const [form, setForm] = useState(() => normalizePrizeSettings(settings));
+
+  useEffect(() => {
+    setForm(normalizePrizeSettings(settings));
+  }, [settings]);
+
+  const distributionTotal = form.prize_distribution.reduce((sum, item) => sum + Number(item.percent || 0), 0);
+  const prizeRows = buildPrizeRows(form);
+
+  function updateField(field, value) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function updateWinnersCount(value) {
+    const count = Math.min(10, Math.max(1, Number(value || 1)));
+    setForm((prev) => ({
+      ...prev,
+      winners_count: count,
+      prize_distribution: defaultDistributionForWinners(count),
+    }));
+  }
+
+  function updateDistribution(place, value) {
+    const percent = Math.max(0, Number(value || 0));
+    setForm((prev) => ({
+      ...prev,
+      prize_distribution: prev.prize_distribution.map((item) => (
+        Number(item.place) === Number(place) ? { ...item, percent } : item
+      )),
+    }));
+  }
+
+  async function savePrizeSettings() {
+    if (!adminPin.trim()) {
+      setStatus('Ingresá el PIN admin para guardar los premios.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (form.prize_enabled && distributionTotal !== 100) {
+      setStatus(`La distribución de premios debe sumar 100%. Ahora suma ${distributionTotal}%.`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setStatus('Guardando premios...');
+
+    try {
+      const body = await callProdeSettings({
+        pin: adminPin.trim(),
+        prize_enabled: Boolean(form.prize_enabled),
+        prize_pool: Number(form.prize_pool || 0),
+        prize_currency: form.prize_currency || '$',
+        winners_count: Number(form.winners_count || 3),
+        prize_distribution: form.prize_distribution,
+        prize_note: form.prize_note,
+      });
+
+      setStatus(body.message || 'Premios actualizados correctamente.');
+      await loadAll();
+    } catch (error) {
+      setStatus(error.message || 'No pude guardar los premios.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="sectionTitle">
+        <h2>Premios del prode</h2>
+        <p>Configurá el pozo acumulado y cómo se reparte en el ranking.</p>
+      </div>
+
+      <div className="teamEditGrid">
+        <label>
+          Activar premios
+          <select value={form.prize_enabled ? 'yes' : 'no'} onChange={(e) => updateField('prize_enabled', e.target.value === 'yes')}>
+            <option value="yes">Sí</option>
+            <option value="no">No</option>
+          </select>
+        </label>
+
+        <label>
+          Pozo acumulado
+          <input
+            inputMode="numeric"
+            value={form.prize_pool}
+            onChange={(e) => updateField('prize_pool', e.target.value.replace(/[^0-9.]/g, ''))}
+            placeholder="Ej: 50000"
+          />
+        </label>
+
+        <label>
+          Moneda / símbolo
+          <input
+            value={form.prize_currency}
+            onChange={(e) => updateField('prize_currency', e.target.value)}
+            placeholder="$"
+          />
+        </label>
+
+        <label>
+          Cantidad de ganadores
+          <input
+            type="number"
+            min="1"
+            max="10"
+            value={form.winners_count}
+            onChange={(e) => updateWinnersCount(e.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className="sectionTitle">
+        <h3>Distribución</h3>
+        <p>Debe sumar 100%. Total actual: <b>{distributionTotal}%</b></p>
+      </div>
+
+      <div className="teamEditGrid">
+        {form.prize_distribution.map((item) => (
+          <label key={item.place}>
+            {item.place}° puesto (%)
+            <input
+              inputMode="numeric"
+              value={item.percent}
+              onChange={(e) => updateDistribution(item.place, e.target.value)}
+            />
+            <small>{formatPrizeAmount(form, prizeRows.find((row) => row.place === item.place)?.amount || 0)}</small>
+          </label>
+        ))}
+      </div>
+
+      <label className="field nameField">
+        Nota visible en ranking
+        <input
+          value={form.prize_note}
+          onChange={(e) => updateField('prize_note', e.target.value)}
+          placeholder="Ej: El pozo se reparte entre los primeros puestos."
+        />
+      </label>
+
+      <button className="primary" type="button" onClick={savePrizeSettings}>
+        Guardar premios
+      </button>
+    </section>
+  );
+}
+
+function AccessAdminPanel({ participants, adminPin, setStatus, loadAll }) {
+  const pending = participants.filter((p) => (p.status || 'approved') === 'pending');
+  const approved = participants.filter((p) => !p.status || p.status === 'approved');
+  const rejected = participants.filter((p) => p.status === 'rejected');
+
+  async function changeParticipantStatus(action, participant) {
+    if (!adminPin.trim()) {
+      setStatus('Ingresá el PIN admin para aprobar o rechazar participantes.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setStatus(action === 'approve' ? 'Aprobando participante...' : 'Rechazando participante...');
+
+    try {
+      const body = await callParticipantAccess({
+        action,
+        pin: adminPin.trim(),
+        participant_id: participant.id,
+      });
+
+      setStatus(body.message || 'Cambio guardado.');
+      await loadAll();
+    } catch (error) {
+      setStatus(error.message || 'No pude modificar el participante.');
+    }
+  }
+
+  async function copyParticipantCode(participant) {
+    const message = `Hola ${participant.name}, ya te aprobé para participar del prode familiar. Tu código de acceso es: ${participant.access_code}`;
+    try {
+      await navigator.clipboard.writeText(message);
+      setStatus('Mensaje copiado. Pegalo en WhatsApp.');
+    } catch {
+      setStatus(`Código de ${participant.name}: ${participant.access_code}`);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="sectionTitle">
+        <h2>Participantes</h2>
+        <p>Aprobá solo a quienes querés que puedan cargar el prode. Cada aprobado tiene un código personal.</p>
+      </div>
+
+      <div className="sectionTitle">
+        <h3>Solicitudes pendientes</h3>
+        <p>{pending.length === 0 ? 'No hay solicitudes pendientes.' : 'Revisá y aprobá o rechazá cada solicitud.'}</p>
+      </div>
+
+      <div className="rankingList">
+        {pending.map((participant) => (
+          <div key={participant.id} className="rankRow">
+            <div className="position">?</div>
+            <div className="rankInfo">
+              <strong>{participant.name}</strong>
+              <span>Esperando aprobación</span>
+            </div>
+            <div className="accessActions">
+              <button className="primary" type="button" onClick={() => changeParticipantStatus('approve', participant)}>
+                Aprobar
+              </button>
+              <button className="ghost" type="button" onClick={() => changeParticipantStatus('reject', participant)}>
+                Rechazar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="sectionTitle">
+        <h3>Aprobados</h3>
+        <p>Pasales su código por WhatsApp. Sin ese código no pueden cargar ni editar.</p>
+      </div>
+
+      <div className="rankingList">
+        {approved.length === 0 && <p>Todavía no hay participantes aprobados.</p>}
+        {approved.map((participant, index) => (
+          <div key={participant.id} className="rankRow">
+            <div className="position">{index + 1}</div>
+            <div className="rankInfo">
+              <strong>{participant.name}</strong>
+              <span>Código: <b>{participant.access_code || 'sin código'}</b></span>
+            </div>
+            <div className="accessActions">
+              {participant.access_code && (
+                <button className="ghost" type="button" onClick={() => copyParticipantCode(participant)}>
+                  Copiar
+                </button>
+              )}
+              <button className="ghost" type="button" onClick={() => changeParticipantStatus('reject', participant)}>
+                Rechazar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {rejected.length > 0 && (
+        <>
+          <div className="sectionTitle">
+            <h3>Rechazados</h3>
+            <p>Podés aprobarlos más adelante si fue un error.</p>
+          </div>
+
+          <div className="rankingList">
+            {rejected.map((participant) => (
+              <div key={participant.id} className="rankRow">
+                <div className="position">×</div>
+                <div className="rankInfo">
+                  <strong>{participant.name}</strong>
+                  <span>Solicitud rechazada</span>
+                </div>
+                <div className="accessActions">
+                  <button className="primary" type="button" onClick={() => changeParticipantStatus('approve', participant)}>
+                    Aprobar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function AdminApp() {
-  const { matches, participants, predictions, status, setStatus, loading, loadAll } = useProdeData();
+  const { matches, participants, predictions, settings, status, setStatus, loading, loadAll } = useProdeData({ admin: true });
   const [adminPin, setAdminPin] = useState('');
   const [adminResults, setAdminResults] = useState({});
   const [adminTeams, setAdminTeams] = useState({});
@@ -1178,6 +1831,20 @@ function AdminApp() {
       {status && <div className="status">{status}</div>}
       {loading && <div className="status">Cargando datos...</div>}
 
+      <PrizeAdminPanel
+        settings={settings}
+        adminPin={adminPin}
+        setStatus={setStatus}
+        loadAll={loadAll}
+      />
+
+      <AccessAdminPanel
+        participants={participants}
+        adminPin={adminPin}
+        setStatus={setStatus}
+        loadAll={loadAll}
+      />
+
       <section className="panel formPanel">
         <div className="sectionTitle">
           <h2>Cargar resultados reales <PointsTooltip /></h2>
@@ -1203,7 +1870,7 @@ function AdminApp() {
         </form>
       </section>
 
-      <RankingPanel participants={participants} predictions={predictions} matches={matches} />
+      <RankingPanel participants={participants} predictions={predictions} matches={matches} settings={settings} />
     </main>
   );
 }
