@@ -43,22 +43,16 @@ function scorePrediction(predA, predB, realA, realB) {
   return { points: 0, exact: false, outcomeHit: false };
 }
 
-function App() {
+function useProdeData() {
   const [matches, setMatches] = useState([]);
   const [participants, setParticipants] = useState([]);
   const [predictions, setPredictions] = useState([]);
-  const [name, setName] = useState('');
-  const [formScores, setFormScores] = useState({});
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('cargar');
-  const [adminPin, setAdminPin] = useState('');
-  const [adminResults, setAdminResults] = useState({});
-  const [showAdmin, setShowAdmin] = useState(false);
 
   async function loadAll() {
     if (!supabase) {
-      setStatus('Faltan las variables de Supabase. Revisá el archivo .env o las variables de Vercel.');
+      setStatus('Faltan las variables de Supabase. Revisá las variables de entorno en Vercel.');
       setLoading(false);
       return;
     }
@@ -101,6 +95,33 @@ function App() {
     };
   }, []);
 
+  return { matches, participants, predictions, status, setStatus, loading, loadAll };
+}
+
+function Header({ admin = false }) {
+  return (
+    <section className={`hero ${admin ? 'adminHero' : ''}`}>
+      <div className="heroGlow"></div>
+      <div className="heroText">
+        <p className="eyebrow">🏆 Familia · Mundial · Prode</p>
+        <h1>{admin ? 'Panel Admin' : 'Prode 16avos'}</h1>
+        <p>{admin ? 'Cargá los resultados reales y el ranking se actualiza solo.' : 'Cargá tus resultados, mirá el ranking en vivo y peleá por la copa familiar.'}</p>
+        <div className="rules">
+          <span>Exacto: +6</span>
+          <span>Ganador/empate: +3</span>
+          {admin && <span>Acceso privado</span>}
+        </div>
+      </div>
+      <div className="heroCard" aria-hidden="true">
+        <div className="shirt">10</div>
+        <div className="cup">🏆</div>
+        <div className="ball">⚽</div>
+      </div>
+    </section>
+  );
+}
+
+function RankingPanel({ participants, predictions, matches }) {
   const ranking = useMemo(() => {
     return participants
       .map((participant) => {
@@ -136,6 +157,57 @@ function App() {
       });
   }, [participants, predictions, matches]);
 
+  return (
+    <section className="panel">
+      <div className="sectionTitle">
+        <h2>Ranking familiar</h2>
+        <p>Ordenado por puntos. En empate, gana quien tenga más resultados exactos.</p>
+      </div>
+
+      <div className="rankingList">
+        {ranking.length === 0 && <p>Todavía no hay participantes registrados.</p>}
+        {ranking.map((row, index) => (
+          <div key={row.id} className={`rankRow rank${index + 1}`}>
+            <div className="position">{index + 1}</div>
+            <div className="rankInfo">
+              <strong>{row.name}</strong>
+              <span>{row.exacts} exactos · {row.outcomeHits} ganador/empate · {row.predictionsCount} pronósticos</span>
+            </div>
+            <div className="points">{row.points} pts</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ResultsPanel({ matches }) {
+  return (
+    <section className="panel">
+      <div className="sectionTitle">
+        <h2>Resultados reales</h2>
+        <p>Acá se ven los resultados cargados y el estado de cada partido.</p>
+      </div>
+
+      <div className="resultsTable">
+        {matches.map((m) => (
+          <div key={m.id} className="resultRow">
+            <span>#{m.match_no}</span>
+            <strong>{m.team_a} vs {m.team_b}</strong>
+            <em>{m.real_a === null || m.real_b === null ? 'Pendiente' : `${m.real_a} - ${m.real_b}`}</em>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PublicApp() {
+  const { matches, participants, predictions, status, setStatus, loading, loadAll } = useProdeData();
+  const [name, setName] = useState('');
+  const [formScores, setFormScores] = useState({});
+  const [tab, setTab] = useState('cargar');
+
   const myParticipant = useMemo(() => {
     const key = normalizeName(name || '');
     return participants.find((p) => p.name_key === key);
@@ -154,18 +226,6 @@ function App() {
   function updateScore(matchId, side, value) {
     if (value !== '' && (!/^\d+$/.test(value) || Number(value) > 99)) return;
     setFormScores((prev) => ({
-      ...prev,
-      [matchId]: {
-        a: prev[matchId]?.a ?? '',
-        b: prev[matchId]?.b ?? '',
-        [side]: value,
-      },
-    }));
-  }
-
-  function updateAdminResult(matchId, side, value) {
-    if (value !== '' && (!/^\d+$/.test(value) || Number(value) > 99)) return;
-    setAdminResults((prev) => ({
       ...prev,
       [matchId]: {
         a: prev[matchId]?.a ?? '',
@@ -204,7 +264,6 @@ function App() {
         .single();
 
       if (error) {
-        // Puede pasar si dos personas cargan al mismo tiempo. Intentamos leer de nuevo.
         const retry = await supabase.from('participants').select('*').eq('name_key', nameKey).maybeSingle();
         if (retry.error || !retry.data) {
           console.error(error);
@@ -239,77 +298,9 @@ function App() {
     setTab('ranking');
   }
 
-  async function submitAdminResults(e) {
-    e.preventDefault();
-    setStatus('');
-
-    const results = matches
-      .filter((m) => adminResults[m.id]?.a !== '' && adminResults[m.id]?.b !== '' && adminResults[m.id])
-      .map((m) => ({
-        match_id: m.id,
-        real_a: Number(adminResults[m.id].a),
-        real_b: Number(adminResults[m.id].b),
-      }));
-
-    if (!adminPin.trim()) {
-      setStatus('Ingresá el PIN de admin.');
-      return;
-    }
-
-    if (results.length === 0) {
-      setStatus('Cargá al menos un resultado real.');
-      return;
-    }
-
-    setStatus('Actualizando resultados reales...');
-
-    const response = await fetch('/api/admin-results', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: adminPin.trim(), results }),
-    });
-
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setStatus(body.error || 'No pude actualizar los resultados.');
-      return;
-    }
-
-    setStatus('Resultados reales cargados. Ranking actualizado.');
-    setAdminResults({});
-    await loadAll();
-    setTab('ranking');
-  }
-
-  function fillAdminFromCurrent() {
-    const next = {};
-    matches.forEach((m) => {
-      if (m.real_a !== null && m.real_b !== null) {
-        next[m.id] = { a: String(m.real_a), b: String(m.real_b) };
-      }
-    });
-    setAdminResults(next);
-  }
-
   return (
     <main className="page">
-      <section className="hero">
-        <div className="heroGlow"></div>
-        <div className="heroText">
-          <p className="eyebrow">🏆 Familia · Mundial · Prode</p>
-          <h1>Prode 16avos</h1>
-          <p>Cargá tus resultados, mirá el ranking en vivo y peleá por la copa familiar.</p>
-          <div className="rules">
-            <span>Exacto: +6</span>
-            <span>Ganador/empate: +3</span>
-          </div>
-        </div>
-        <div className="heroCard" aria-hidden="true">
-          <div className="shirt">10</div>
-          <div className="cup">🏆</div>
-          <div className="ball">⚽</div>
-        </div>
-      </section>
+      <Header />
 
       <nav className="tabs">
         <button className={tab === 'cargar' ? 'active' : ''} onClick={() => setTab('cargar')}>Cargar prode</button>
@@ -365,9 +356,7 @@ function App() {
                       disabled={locked}
                     />
                   </div>
-                  {locked && (
-                    <p className="realResult">Resultado real: {match.real_a} - {match.real_b}</p>
-                  )}
+                  {locked && <p className="realResult">Resultado real: {match.real_a} - {match.real_b}</p>}
                 </article>
               );
             })}
@@ -377,96 +366,147 @@ function App() {
         </form>
       )}
 
-      {tab === 'ranking' && (
-        <section className="panel">
-          <div className="sectionTitle">
-            <h2>Ranking familiar</h2>
-            <p>Ordenado por puntos. En empate, gana quien tenga más resultados exactos.</p>
-          </div>
-
-          <div className="rankingList">
-            {ranking.length === 0 && <p>Todavía no hay participantes registrados.</p>}
-            {ranking.map((row, index) => (
-              <div key={row.id} className={`rankRow rank${index + 1}`}>
-                <div className="position">{index + 1}</div>
-                <div className="rankInfo">
-                  <strong>{row.name}</strong>
-                  <span>{row.exacts} exactos · {row.outcomeHits} ganador/empate · {row.predictionsCount} pronósticos</span>
-                </div>
-                <div className="points">{row.points} pts</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {tab === 'resultados' && (
-        <section className="panel">
-          <div className="sectionTitle">
-            <h2>Resultados reales</h2>
-            <p>Acá se ven los resultados cargados y el estado de cada partido.</p>
-          </div>
-
-          <div className="resultsTable">
-            {matches.map((m) => (
-              <div key={m.id} className="resultRow">
-                <span>#{m.match_no}</span>
-                <strong>{m.team_a} vs {m.team_b}</strong>
-                <em>{m.real_a === null || m.real_b === null ? 'Pendiente' : `${m.real_a} - ${m.real_b}`}</em>
-              </div>
-            ))}
-          </div>
-
-          <button className="ghost" onClick={() => { setShowAdmin((v) => !v); fillAdminFromCurrent(); }}>
-            {showAdmin ? 'Ocultar admin' : 'Cargar resultados como admin'}
-          </button>
-
-          {showAdmin && (
-            <form className="adminBox" onSubmit={submitAdminResults}>
-              <div className="field">
-                <label>PIN admin</label>
-                <input
-                  type="password"
-                  value={adminPin}
-                  onChange={(e) => setAdminPin(e.target.value)}
-                  placeholder="PIN privado"
-                />
-              </div>
-
-              <div className="matchGrid compact">
-                {matches.map((m) => (
-                  <article key={m.id} className="matchCard">
-                    <div className="matchTop">
-                      <strong>Partido {m.match_no}</strong>
-                      <span>{m.locked ? 'Bloqueado' : 'Abierto'}</span>
-                    </div>
-                    <div className="scoreRow">
-                      <span>{m.team_a}</span>
-                      <input
-                        inputMode="numeric"
-                        value={adminResults[m.id]?.a ?? ''}
-                        onChange={(e) => updateAdminResult(m.id, 'a', e.target.value)}
-                      />
-                    </div>
-                    <div className="scoreRow">
-                      <span>{m.team_b}</span>
-                      <input
-                        inputMode="numeric"
-                        value={adminResults[m.id]?.b ?? ''}
-                        onChange={(e) => updateAdminResult(m.id, 'b', e.target.value)}
-                      />
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              <button className="primary" type="submit">Guardar resultados reales</button>
-            </form>
-          )}
-        </section>
-      )}
+      {tab === 'ranking' && <RankingPanel participants={participants} predictions={predictions} matches={matches} />}
+      {tab === 'resultados' && <ResultsPanel matches={matches} />}
     </main>
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function AdminApp() {
+  const { matches, participants, predictions, status, setStatus, loading, loadAll } = useProdeData();
+  const [adminPin, setAdminPin] = useState('');
+  const [adminResults, setAdminResults] = useState({});
+
+  useEffect(() => {
+    const next = {};
+    matches.forEach((m) => {
+      if (m.real_a !== null && m.real_b !== null) {
+        next[m.id] = { a: String(m.real_a), b: String(m.real_b) };
+      }
+    });
+    setAdminResults(next);
+  }, [matches]);
+
+  function updateAdminResult(matchId, side, value) {
+    if (value !== '' && (!/^\d+$/.test(value) || Number(value) > 99)) return;
+    setAdminResults((prev) => ({
+      ...prev,
+      [matchId]: {
+        a: prev[matchId]?.a ?? '',
+        b: prev[matchId]?.b ?? '',
+        [side]: value,
+      },
+    }));
+  }
+
+  async function submitAdminResults(e) {
+    e.preventDefault();
+    setStatus('');
+
+    const results = matches
+      .filter((m) => adminResults[m.id]?.a !== '' && adminResults[m.id]?.b !== '' && adminResults[m.id])
+      .map((m) => ({
+        match_id: m.id,
+        real_a: Number(adminResults[m.id].a),
+        real_b: Number(adminResults[m.id].b),
+      }));
+
+    if (!adminPin.trim()) {
+      setStatus('Ingresá el PIN de admin.');
+      return;
+    }
+
+    if (results.length === 0) {
+      setStatus('Cargá al menos un resultado real.');
+      return;
+    }
+
+    setStatus('Actualizando resultados reales...');
+
+    const response = await fetch('/api/admin-results', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: adminPin.trim(), results }),
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setStatus(body.error || 'No pude actualizar los resultados.');
+      return;
+    }
+
+    setStatus('Resultados reales cargados. Ranking actualizado.');
+    await loadAll();
+  }
+
+  return (
+    <main className="page adminPage">
+      <Header admin />
+
+      <div className="adminTopBar">
+        <a href="/">← Volver al prode público</a>
+        <span>URL privada: /admin</span>
+      </div>
+
+      {status && <div className="status">{status}</div>}
+      {loading && <div className="status">Cargando datos...</div>}
+
+      <section className="panel">
+        <div className="sectionTitle">
+          <h2>Cargar resultados reales</h2>
+          <p>Cuando guardás un resultado, el partido queda cerrado para nuevos pronósticos.</p>
+        </div>
+
+        <form onSubmit={submitAdminResults}>
+          <div className="field pinField">
+            <label>PIN admin</label>
+            <input
+              type="password"
+              value={adminPin}
+              onChange={(e) => setAdminPin(e.target.value)}
+              placeholder="PIN privado"
+            />
+          </div>
+
+          <div className="matchGrid compact">
+            {matches.map((m) => (
+              <article key={m.id} className="matchCard">
+                <div className="matchTop">
+                  <strong>Partido {m.match_no}</strong>
+                  <span>{m.locked ? 'Bloqueado' : 'Abierto'}</span>
+                </div>
+                <div className="scoreRow">
+                  <span>{m.team_a}</span>
+                  <input
+                    inputMode="numeric"
+                    value={adminResults[m.id]?.a ?? ''}
+                    onChange={(e) => updateAdminResult(m.id, 'a', e.target.value)}
+                  />
+                </div>
+                <div className="scoreRow">
+                  <span>{m.team_b}</span>
+                  <input
+                    inputMode="numeric"
+                    value={adminResults[m.id]?.b ?? ''}
+                    onChange={(e) => updateAdminResult(m.id, 'b', e.target.value)}
+                  />
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <button className="primary" type="submit">Guardar resultados reales</button>
+        </form>
+      </section>
+
+      <RankingPanel participants={participants} predictions={predictions} matches={matches} />
+    </main>
+  );
+}
+
+function Router() {
+  const isAdmin = window.location.pathname.replace(/\/$/, '') === '/admin';
+  return isAdmin ? <AdminApp /> : <PublicApp />;
+}
+
+createRoot(document.getElementById('root')).render(<Router />);
