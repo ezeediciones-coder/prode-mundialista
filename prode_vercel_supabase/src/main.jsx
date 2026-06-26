@@ -478,13 +478,11 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
   const predOutcome = predA !== '' && predB !== '' ? outcome(predA, predB) : '';
   const advancePick = predOutcome === 'A' || predOutcome === 'B' ? predOutcome : (current.advance || saved?.advance_pick || '');
   const realAdvance = actualAdvance(match);
-  const currentPrediction = { a: predA, b: predB, penA: predPenA, penB: predPenB, advance: advancePick };
-  const closeAt = predictionClosesAt(match);
 
   return (
     <article className={`bracketMatch ${locked ? 'locked' : ''} ${saved ? 'hasSavedPrediction' : ''}`}>
       <div className="matchLabelRow">
-        <div className="matchLabel">Partido {match.match_no} <PointsTooltip /></div>
+        <div className="matchLabel">Partido {match.match_no}</div>
         {saved && !locked && !editing && (
           <button className="editPredictionButton" type="button" onClick={() => setEditing(true)} title="Editar este prode antes del cierre">
             ✏️ Editar
@@ -495,9 +493,7 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
       </div>
 
       <div className="matchTimeHint">
-        {closeAt
-          ? `Editable hasta 1 h antes: ${closeAt.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-          : 'Editable hasta que el admin cargue horario, cierre o resultado.'}
+        Editable hasta 1 hora antes del partido.
       </div>
 
       <div className="bracketHead">
@@ -530,7 +526,7 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
               </select>
             </label>
             <div className="penaltyGrid">
-              <span>Penales pronosticados <PointsTooltip /></span>
+              <span>Penales pronosticados</span>
               <input aria-label={`Penales ${match.team_a}`} inputMode="numeric" placeholder="4" value={predPenA} onChange={(e) => updatePenaltyScore(match.id, 'penA', e.target.value)} disabled={!canEdit} />
               <input aria-label={`Penales ${match.team_b}`} inputMode="numeric" placeholder="2" value={predPenB} onChange={(e) => updatePenaltyScore(match.id, 'penB', e.target.value)} disabled={!canEdit} />
             </div>
@@ -544,7 +540,6 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
 
       {saved && !editing && !locked && <div className="savedHint">Prode guardado. Tocá el lápiz para modificarlo antes del cierre.</div>}
       {locked && <div className="savedHint lockedHint">Este partido ya no se puede editar. Tu prode queda visible.</div>}
-      <MatchScorePreview prediction={currentPrediction} match={match} />
       {match.went_penalties && <div className="penaltyBadge">Definido por penales {match.real_pen_a ?? '-'}-{match.real_pen_b ?? '-'}</div>}
     </article>
   );
