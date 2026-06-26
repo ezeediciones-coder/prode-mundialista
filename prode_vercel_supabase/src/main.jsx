@@ -209,16 +209,18 @@ function datetimeLocalToIso(value) {
 
 function PointsTooltip() {
   return (
-    <span className="tooltipWrap" tabIndex="0" title="Reglas: el resultado final incluye alargue. Penales se cuentan aparte solo si el partido terminó empatado y fue a penales.">
+    <span className="tooltipWrap" tabIndex="0" title="Primero suma el resultado del partido. Si va a penales, podés sumar extra.">
       <span className="infoDot">?</span>
       <span className="tooltipBox">
-        <b>Sistema de puntos</b><br />
-        <b>Resultado final</b>: incluye 90 minutos + alargue.<br />
-        Resultado exacto: +6.<br />
-        Resultado no exacto, pero acierta quién avanza/tendencia: +3.<br />
-        Si fue a penales: empate exacto +6 o empate no exacto +3.<br />
-        En penales: clasificado +3 o penales exactos +6.<br />
-        <b>Solo en penales se acumula resultado + definición.</b>
+        <b>Reglas simples</b><br />
+        Primero se suman puntos por el resultado del partido.<br />
+        Exacto: +6.<br />
+        Acierta quién pasa, pero no exacto: +3.<br />
+        No acierta quién pasa: 0.<br /><br />
+        <b>Si hay penales</b>, podés sumar extra:<br />
+        Acierta quién pasa por penales: +3 extra.<br />
+        Penales exactos: +6 extra.<br /><br />
+        El alargue cuenta como parte del partido.
       </span>
     </span>
   );
@@ -229,26 +231,29 @@ function RulesPanel({ compact = false }) {
     <section className={`panel rulesPanel ${compact ? 'compactRules' : ''}`}>
       <div className="sectionTitle">
         <h2>Reglas del prode <PointsTooltip /></h2>
-        <p>El marcador final del partido incluye el alargue. Los penales se cargan aparte.</p>
+        <p>Primero sumás por el partido. Si va a penales, podés sumar puntos extra.</p>
       </div>
+
       <div className="rulesGrid">
         <div className="ruleCard">
-          <strong>Partido sin penales</strong>
+          <strong>1. Partido</strong>
           <span>Resultado exacto: <b>+6</b></span>
-          <span>No exacto, pero acierta quién avanza: <b>+3</b></span>
-          <span>No acierta: <b>0</b></span>
+          <span>Acierta quién pasa, pero no exacto: <b>+3</b></span>
+          <span>No acierta quién pasa: <b>0</b></span>
         </div>
+
         <div className="ruleCard">
-          <strong>Partido con penales</strong>
-          <span>Empate exacto: <b>+6</b></span>
-          <span>Empate no exacto: <b>+3</b></span>
-          <span>Además, clasificado por penales: <b>+3</b></span>
-          <span>O penales exactos: <b>+6</b></span>
+          <strong>2. Penales</strong>
+          <span>Solo cuentan si el partido termina empatado después del alargue.</span>
+          <span>Acierta quién pasa por penales: <b>+3 extra</b></span>
+          <span>Resultado exacto de penales: <b>+6 extra</b></span>
         </div>
+
         <div className="ruleCard">
-          <strong>Alargue</strong>
-          <span>Si iban 1-1 en los 90 y termina 2-1 en alargue, el resultado real es <b>2-1</b>.</span>
-          <span>Solo se usan penales si el partido termina empatado después del alargue.</span>
+          <strong>3. Alargue</strong>
+          <span>El alargue cuenta como parte del partido.</span>
+          <span>Ejemplo: si iban 1-1 y termina 2-1 en alargue, el resultado real es <b>2-1</b>.</span>
+          <span>En ese caso no se cargan penales.</span>
         </div>
       </div>
     </section>
@@ -319,10 +324,9 @@ function Header({ admin = false }) {
         <h1>{admin ? 'Panel Admin' : 'Prode 16avos'}</h1>
         <p>{admin ? 'Cargá los resultados reales, penales y clasificados.' : 'Completá tu llave mundialista y peleá el ranking familiar en vivo.'}</p>
         <div className="rules">
-          <span>Exacto: +6</span>
-          <span>Clasificado: +3</span>
-          <span>Penales pueden acumular</span>
-          <span>Alargue cuenta como partido</span>
+          <span>Partido: +6 o +3</span>
+          <span>Penales suman extra</span>
+          <span>Alargue cuenta</span>
           <span className="ruleHelp">Reglas <PointsTooltip /></span>
         </div>
       </div>
