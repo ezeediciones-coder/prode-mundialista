@@ -491,7 +491,7 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
   );
 }
 
-function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty, updateRealAdvance, updateAdminPenaltyScore, adminTeams, updateTeamName }) {
+function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty, updateRealAdvance, updateAdminPenaltyScore, clearAdminMatchResult, adminTeams, updateTeamName }) {
   const current = adminResults[match.id] || { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' };
   const teamNames = adminTeams[match.id] || { teamA: match.team_a, teamB: match.team_b };
   const teamA = teamNames.teamA ?? match.team_a;
@@ -558,11 +558,20 @@ function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty,
           Si el resultado final quedó empatado después del alargue, marcá “Fue a penales” y cargá la definición.
         </div>
       )}
+
+      <button
+        className="ghost smallClear"
+        type="button"
+        onClick={() => clearAdminMatchResult(match.id)}
+        title="Deja este partido sin resultado real y vuelve a estado pendiente"
+      >
+        Limpiar resultado
+      </button>
     </article>
   );
 }
 
-function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, updatePenaltyScore, participant, predictions, adminResults, updateAdminResult, updatePenalty, updateRealAdvance, updateAdminPenaltyScore, adminTeams, updateTeamName }) {
+function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, updatePenaltyScore, participant, predictions, adminResults, updateAdminResult, updatePenalty, updateRealAdvance, updateAdminPenaltyScore, clearAdminMatchResult, adminTeams, updateTeamName }) {
   const byMatchNo = useMemo(() => {
     const map = new Map();
     matches.forEach((m) => map.set(m.match_no, m));
@@ -597,6 +606,7 @@ function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, u
                       updatePenalty={updatePenalty}
                       updateRealAdvance={updateRealAdvance}
                       updateAdminPenaltyScore={updateAdminPenaltyScore}
+                      clearAdminMatchResult={clearAdminMatchResult}
                       adminTeams={adminTeams}
                       updateTeamName={updateTeamName}
                     />
@@ -916,6 +926,37 @@ function AdminApp() {
     });
   }
 
+  function clearAdminMatchResult(matchId) {
+    setAdminResults((prev) => ({
+      ...prev,
+      [matchId]: { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' },
+    }));
+  }
+
+  function savedResultExists(match) {
+    return (
+      match.real_a !== null ||
+      match.real_b !== null ||
+      Boolean(match.went_penalties) ||
+      match.real_pen_a !== null ||
+      match.real_pen_b !== null ||
+      Boolean(match.advance_winner) ||
+      Boolean(match.locked)
+    );
+  }
+
+  function adminResultChanged(match, row) {
+    const saved = {
+      a: match.real_a !== null && match.real_a !== undefined ? String(match.real_a) : '',
+      b: match.real_b !== null && match.real_b !== undefined ? String(match.real_b) : '',
+      penalties: Boolean(match.went_penalties),
+      advance: match.advance_winner || '',
+      penA: match.real_pen_a !== null && match.real_pen_a !== undefined ? String(match.real_pen_a) : '',
+      penB: match.real_pen_b !== null && match.real_pen_b !== undefined ? String(match.real_pen_b) : '',
+    };
+    return ['a', 'b', 'advance', 'penA', 'penB'].some((key) => String(row[key] ?? '') !== String(saved[key] ?? '')) || Boolean(row.penalties) !== saved.penalties;
+  }
+
   async function submitAdminResults(e) {
     if (e?.preventDefault) e.preventDefault();
     setStatus('');
@@ -938,9 +979,20 @@ function AdminApp() {
       .filter(Boolean);
 
     const results = matches
-      .filter((m) => adminResults[m.id]?.a !== '' && adminResults[m.id]?.b !== '' && adminResults[m.id])
       .map((m) => {
-        const row = adminResults[m.id];
+        const row = adminResults[m.id] || { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' };
+        const hasAnyInput = row.a !== '' || row.b !== '' || Boolean(row.penalties) || row.advance !== '' || row.penA !== '' || row.penB !== '';
+
+        if (!hasAnyInput) {
+          return savedResultExists(m) ? { match_id: m.id, clear_result: true } : null;
+        }
+
+        if (row.a === '' || row.b === '') {
+          return { match_id: m.id, invalid_partial: true };
+        }
+
+        if (!adminResultChanged(m, row)) return null;
+
         const o = outcome(row.a, row.b);
         const pWinner = penaltyWinner(row.penA, row.penB);
         const wentPenalties = Boolean(row.penalties);
@@ -953,7 +1005,8 @@ function AdminApp() {
           real_pen_b: wentPenalties && row.penB !== '' ? Number(row.penB) : null,
           advance_winner: wentPenalties ? (pWinner || row.advance) : (o === 'A' || o === 'B' ? o : row.advance),
         };
-      });
+      })
+      .filter(Boolean);
 
     if (results.length === 0 && teamUpdates.length === 0) {
       setStatus('No hay cambios para guardar. Editá equipos o cargá al menos un resultado real.');
@@ -961,7 +1014,15 @@ function AdminApp() {
       return;
     }
 
+    const invalidPartial = results.find((r) => r.invalid_partial);
+    if (invalidPartial) {
+      setStatus('Para cargar un resultado real completá los dos casilleros, o tocá “Limpiar resultado” para dejarlo pendiente.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     const invalid = results.find((r) => {
+      if (r.clear_result) return false;
       const o = outcome(r.real_a, r.real_b);
       if (!r.went_penalties && o === 'D') return true;
       if (r.went_penalties && o !== 'D') return true;
@@ -1039,6 +1100,7 @@ function AdminApp() {
             updatePenalty={updatePenalty}
             updateRealAdvance={updateRealAdvance}
             updateAdminPenaltyScore={updateAdminPenaltyScore}
+            clearAdminMatchResult={clearAdminMatchResult}
             adminTeams={adminTeams}
             updateTeamName={updateTeamName}
           />

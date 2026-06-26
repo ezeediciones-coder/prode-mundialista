@@ -912,3 +912,19 @@ small { color: rgba(255,255,255,.68); }
     max-width: none;
   }
 }
+
+.ghost.smallClear {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid rgba(255, 230, 86, .55);
+  background: rgba(255, 230, 86, .13);
+  color: #fff7b1;
+  border-radius: 14px;
+  padding: 9px 10px;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.ghost.smallClear:hover {
+  background: rgba(255, 230, 86, .22);
+}

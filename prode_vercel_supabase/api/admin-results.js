@@ -61,6 +61,33 @@ module.exports = async function handler(req, res) {
 
     for (const item of results) {
       const matchId = Number(item.match_id);
+
+      if (!Number.isInteger(matchId)) {
+        return res.status(400).json({ error: 'Hay un partido inválido.' });
+      }
+
+      if (item.clear_result) {
+        const { error } = await supabase
+          .from('matches')
+          .update({
+            real_a: null,
+            real_b: null,
+            went_penalties: false,
+            real_pen_a: null,
+            real_pen_b: null,
+            advance_winner: null,
+            locked: false,
+          })
+          .eq('id', matchId);
+
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ error: `No pude limpiar uno de los partidos: ${error.message || 'error de Supabase'}` });
+        }
+
+        continue;
+      }
+
       const realA = Number(item.real_a);
       const realB = Number(item.real_b);
       const wentPenalties = Boolean(item.went_penalties);
@@ -70,7 +97,7 @@ module.exports = async function handler(req, res) {
       const penaltyOutcome = penWinner(realPenA, realPenB);
       const advanceWinner = wentPenalties ? (penaltyOutcome || item.advance_winner) : (directOutcome === 'A' || directOutcome === 'B' ? directOutcome : item.advance_winner);
 
-      if (!Number.isInteger(matchId) || !Number.isInteger(realA) || !Number.isInteger(realB) || realA < 0 || realB < 0) {
+      if (!Number.isInteger(realA) || !Number.isInteger(realB) || realA < 0 || realB < 0) {
         return res.status(400).json({ error: 'Hay un resultado inválido.' });
       }
 
