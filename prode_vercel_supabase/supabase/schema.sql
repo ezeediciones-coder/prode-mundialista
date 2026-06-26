@@ -127,6 +127,7 @@ with check (
       and m.locked = false
       and m.real_a is null
       and m.real_b is null
+      and (m.starts_at is null or now() < (m.starts_at - interval '1 hour'))
   )
 );
 
@@ -139,6 +140,7 @@ using (
       and m.locked = false
       and m.real_a is null
       and m.real_b is null
+      and (m.starts_at is null or now() < (m.starts_at - interval '1 hour'))
   )
 )
 with check (
@@ -149,6 +151,7 @@ with check (
       and m.locked = false
       and m.real_a is null
       and m.real_b is null
+      and (m.starts_at is null or now() < (m.starts_at - interval '1 hour'))
   )
 );
 

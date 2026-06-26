@@ -928,3 +928,116 @@ small { color: rgba(255,255,255,.68); }
 .ghost.smallClear:hover {
   background: rgba(255, 230, 86, .22);
 }
+
+.adminEditBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  width: fit-content;
+  border-radius: 999px;
+  background: rgba(255, 216, 78, .22);
+  border: 1px solid rgba(255, 216, 78, .35);
+  color: #fff5b5;
+  font-size: 10px;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.adminEditBadge.clearPending {
+  background: rgba(209, 255, 206, .18);
+  border-color: rgba(209, 255, 206, .42);
+  color: #d8ffd4;
+}
+
+.matchLabelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.matchLabelRow .matchLabel {
+  margin-bottom: 0;
+}
+
+.editPredictionButton {
+  border: 1px solid rgba(183, 255, 102, .48);
+  background: rgba(183, 255, 102, .18);
+  color: #dbffd0;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-weight: 1000;
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.editPredictionButton:hover {
+  background: rgba(183, 255, 102, .28);
+}
+
+.editingPill,
+.closedPill {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.editingPill {
+  background: rgba(255, 230, 86, .20);
+  color: #fff2a6;
+  border: 1px solid rgba(255, 230, 86, .38);
+}
+
+.closedPill {
+  background: rgba(255, 255, 255, .12);
+  color: rgba(255,255,255,.72);
+  border: 1px solid rgba(255, 255, 255, .18);
+}
+
+.matchTimeHint {
+  color: rgba(236,255,225,.72);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: -2px 0 8px;
+}
+
+.adminTimeHint {
+  margin: 4px 0 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(3, 39, 20, .45);
+  border: 1px solid rgba(183, 255, 102, .16);
+}
+
+.savedHint {
+  margin-top: 8px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  line-height: 1.25;
+  font-weight: 900;
+  color: #defed4;
+  background: rgba(183, 255, 102, .12);
+  border: 1px solid rgba(183, 255, 102, .22);
+}
+
+.lockedHint {
+  color: rgba(255,255,255,.76);
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.12);
+}
+
+.kickoffField {
+  grid-column: 1 / -1;
+}
+
+.teamEditGrid input[type="datetime-local"] {
+  font-size: 12px;
+}

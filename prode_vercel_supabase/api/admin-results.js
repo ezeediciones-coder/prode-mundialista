@@ -43,14 +43,19 @@ module.exports = async function handler(req, res) {
       const matchId = Number(item.match_id);
       const teamA = String(item.team_a || '').trim();
       const teamB = String(item.team_b || '').trim();
+      const startsAt = item.starts_at === null || item.starts_at === undefined || item.starts_at === '' ? null : String(item.starts_at);
 
       if (!Number.isInteger(matchId) || !teamA || !teamB) {
         return res.status(400).json({ error: 'Hay un nombre de equipo inválido.' });
       }
 
+      if (startsAt !== null && Number.isNaN(new Date(startsAt).getTime())) {
+        return res.status(400).json({ error: 'Hay una fecha/hora de inicio inválida.' });
+      }
+
       const { error } = await supabase
         .from('matches')
-        .update({ team_a: teamA, team_b: teamB })
+        .update({ team_a: teamA, team_b: teamB, starts_at: startsAt })
         .eq('id', matchId);
 
       if (error) {

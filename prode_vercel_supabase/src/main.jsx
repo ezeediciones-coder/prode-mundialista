@@ -169,6 +169,44 @@ function safeNumberValue(value) {
   return value;
 }
 
+function getStartsAtDate(match) {
+  if (!match?.starts_at) return null;
+  const d = new Date(match.starts_at);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function predictionClosesAt(match) {
+  const starts = getStartsAtDate(match);
+  return starts ? new Date(starts.getTime() - 60 * 60 * 1000) : null;
+}
+
+function isPredictionClosed(match) {
+  if (!match) return true;
+  if (match.locked || match.real_a !== null || match.real_b !== null) return true;
+  const closes = predictionClosesAt(match);
+  return closes ? Date.now() >= closes.getTime() : false;
+}
+
+function formatShortDateTime(match) {
+  const d = getStartsAtDate(match);
+  if (!d) return 'Sin horario cargado';
+  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function isoToDatetimeLocal(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function datetimeLocalToIso(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function PointsTooltip() {
   return (
     <span className="tooltipWrap" tabIndex="0" title="Reglas: el resultado final incluye alargue. Penales se cuentan aparte solo si el partido terminó empatado y fue a penales.">
@@ -428,8 +466,10 @@ function MatchScorePreview({ prediction, match }) {
 }
 
 function MatchCardPublic({ match, formScores, updateScore, updateAdvance, updatePenaltyScore, participant, predictions }) {
-  const locked = match.locked || match.real_a !== null || match.real_b !== null;
   const saved = getPredictionForMatch(match, participant, predictions);
+  const [editing, setEditing] = useState(false);
+  const locked = isPredictionClosed(match);
+  const canEdit = !locked && (!saved || editing);
   const current = getFormScore(formScores, match.id);
   const predA = current.a !== '' ? current.a : saved?.pred_a ?? '';
   const predB = current.b !== '' ? current.b : saved?.pred_b ?? '';
@@ -439,10 +479,27 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
   const advancePick = predOutcome === 'A' || predOutcome === 'B' ? predOutcome : (current.advance || saved?.advance_pick || '');
   const realAdvance = actualAdvance(match);
   const currentPrediction = { a: predA, b: predB, penA: predPenA, penB: predPenB, advance: advancePick };
+  const closeAt = predictionClosesAt(match);
 
   return (
-    <article className={`bracketMatch ${locked ? 'locked' : ''}`}>
-      <div className="matchLabel">Partido {match.match_no} <PointsTooltip /></div>
+    <article className={`bracketMatch ${locked ? 'locked' : ''} ${saved ? 'hasSavedPrediction' : ''}`}>
+      <div className="matchLabelRow">
+        <div className="matchLabel">Partido {match.match_no} <PointsTooltip /></div>
+        {saved && !locked && !editing && (
+          <button className="editPredictionButton" type="button" onClick={() => setEditing(true)} title="Editar este prode antes del cierre">
+            ✏️ Editar
+          </button>
+        )}
+        {saved && editing && !locked && <span className="editingPill">Editando</span>}
+        {locked && <span className="closedPill">Cerrado</span>}
+      </div>
+
+      <div className="matchTimeHint">
+        {closeAt
+          ? `Editable hasta 1 h antes: ${closeAt.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+          : 'Editable hasta que el admin cargue horario, cierre o resultado.'}
+      </div>
+
       <div className="bracketHead">
         <span>Equipo</span>
         <span>Mi prode</span>
@@ -451,13 +508,13 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
 
       <div className={`bracketTeam ${advancePick === 'A' ? 'picked' : ''} ${realAdvance === 'A' ? 'advanced' : ''}`}>
         <span className="teamName">{match.team_a}</span>
-        <input aria-label={`Pronóstico ${match.team_a}`} inputMode="numeric" value={predA} onChange={(e) => updateScore(match.id, 'a', e.target.value)} disabled={locked} />
+        <input aria-label={`Pronóstico ${match.team_a}`} inputMode="numeric" value={predA} onChange={(e) => updateScore(match.id, 'a', e.target.value)} disabled={!canEdit} />
         <span className="realBox">{match.real_a ?? '-'}</span>
       </div>
 
       <div className={`bracketTeam ${advancePick === 'B' ? 'picked' : ''} ${realAdvance === 'B' ? 'advanced' : ''}`}>
         <span className="teamName">{match.team_b}</span>
-        <input aria-label={`Pronóstico ${match.team_b}`} inputMode="numeric" value={predB} onChange={(e) => updateScore(match.id, 'b', e.target.value)} disabled={locked} />
+        <input aria-label={`Pronóstico ${match.team_b}`} inputMode="numeric" value={predB} onChange={(e) => updateScore(match.id, 'b', e.target.value)} disabled={!canEdit} />
         <span className="realBox">{match.real_b ?? '-'}</span>
       </div>
 
@@ -466,7 +523,7 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
           <>
             <label>
               Avanza por penales:
-              <select value={advancePick} onChange={(e) => updateAdvance(match.id, e.target.value)} disabled={locked}>
+              <select value={advancePick} onChange={(e) => updateAdvance(match.id, e.target.value)} disabled={!canEdit}>
                 <option value="">Elegir</option>
                 <option value="A">{match.team_a}</option>
                 <option value="B">{match.team_b}</option>
@@ -474,8 +531,8 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
             </label>
             <div className="penaltyGrid">
               <span>Penales pronosticados <PointsTooltip /></span>
-              <input aria-label={`Penales ${match.team_a}`} inputMode="numeric" placeholder="4" value={predPenA} onChange={(e) => updatePenaltyScore(match.id, 'penA', e.target.value)} disabled={locked} />
-              <input aria-label={`Penales ${match.team_b}`} inputMode="numeric" placeholder="2" value={predPenB} onChange={(e) => updatePenaltyScore(match.id, 'penB', e.target.value)} disabled={locked} />
+              <input aria-label={`Penales ${match.team_a}`} inputMode="numeric" placeholder="4" value={predPenA} onChange={(e) => updatePenaltyScore(match.id, 'penA', e.target.value)} disabled={!canEdit} />
+              <input aria-label={`Penales ${match.team_b}`} inputMode="numeric" placeholder="2" value={predPenB} onChange={(e) => updatePenaltyScore(match.id, 'penB', e.target.value)} disabled={!canEdit} />
             </div>
           </>
         ) : predOutcome ? (
@@ -485,24 +542,30 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
         )}
       </div>
 
+      {saved && !editing && !locked && <div className="savedHint">Prode guardado. Tocá el lápiz para modificarlo antes del cierre.</div>}
+      {locked && <div className="savedHint lockedHint">Este partido ya no se puede editar. Tu prode queda visible.</div>}
       <MatchScorePreview prediction={currentPrediction} match={match} />
       {match.went_penalties && <div className="penaltyBadge">Definido por penales {match.real_pen_a ?? '-'}-{match.real_pen_b ?? '-'}</div>}
     </article>
   );
 }
 
-function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty, updateRealAdvance, updateAdminPenaltyScore, clearAdminMatchResult, adminTeams, updateTeamName }) {
+function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty, updateRealAdvance, updateAdminPenaltyScore, clearAdminMatchResult, adminTeams, updateTeamName, dirtyResults }) {
   const current = adminResults[match.id] || { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' };
-  const teamNames = adminTeams[match.id] || { teamA: match.team_a, teamB: match.team_b };
+  const teamNames = adminTeams[match.id] || { teamA: match.team_a, teamB: match.team_b, startsAt: isoToDatetimeLocal(match.starts_at) };
   const teamA = teamNames.teamA ?? match.team_a;
   const teamB = teamNames.teamB ?? match.team_b;
+  const startsAt = teamNames.startsAt ?? isoToDatetimeLocal(match.starts_at);
   const realOutcome = current.a !== '' && current.b !== '' ? outcome(current.a, current.b) : '';
   const penWinner = penaltyWinner(current.penA, current.penB);
   const inferredAdvance = current.penalties ? (penWinner || current.advance) : (realOutcome === 'A' || realOutcome === 'B' ? realOutcome : current.advance);
+  const isDirty = Boolean(dirtyResults?.[match.id]);
+  const isClearPending = Boolean(current.clear);
 
   return (
     <article className="bracketMatch adminMatch">
       <div className="matchLabel">Partido {match.match_no}</div>
+      {isDirty && <div className={`adminEditBadge ${isClearPending ? 'clearPending' : ''}`}>{isClearPending ? 'Pendiente al guardar' : 'Cambio sin guardar'}</div>}
       <div className="teamEditGrid">
         <label>
           Equipo A
@@ -512,7 +575,12 @@ function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty,
           Equipo B
           <input value={teamB} onChange={(e) => updateTeamName(match.id, 'teamB', e.target.value)} />
         </label>
+        <label className="kickoffField">
+          Inicio del partido
+          <input type="datetime-local" value={startsAt} onChange={(e) => updateTeamName(match.id, 'startsAt', e.target.value)} />
+        </label>
       </div>
+      <div className="matchTimeHint adminTimeHint">Se bloquea 1 hora antes: {startsAt ? new Date(startsAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'sin horario'}</div>
       <div className="bracketHead">
         <span>Equipo</span>
         <span>Real</span>
@@ -565,13 +633,13 @@ function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty,
         onClick={() => clearAdminMatchResult(match.id)}
         title="Deja este partido sin resultado real y vuelve a estado pendiente"
       >
-        Limpiar resultado
+        Limpiar resultado / dejar pendiente
       </button>
     </article>
   );
 }
 
-function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, updatePenaltyScore, participant, predictions, adminResults, updateAdminResult, updatePenalty, updateRealAdvance, updateAdminPenaltyScore, clearAdminMatchResult, adminTeams, updateTeamName }) {
+function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, updatePenaltyScore, participant, predictions, adminResults, updateAdminResult, updatePenalty, updateRealAdvance, updateAdminPenaltyScore, clearAdminMatchResult, adminTeams, updateTeamName, dirtyResults }) {
   const byMatchNo = useMemo(() => {
     const map = new Map();
     matches.forEach((m) => map.set(m.match_no, m));
@@ -609,6 +677,7 @@ function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, u
                       clearAdminMatchResult={clearAdminMatchResult}
                       adminTeams={adminTeams}
                       updateTeamName={updateTeamName}
+                      dirtyResults={dirtyResults}
                     />
                   ) : (
                     <MatchCardPublic
@@ -634,7 +703,7 @@ function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, u
 
 function PublicApp() {
   const { matches, participants, predictions, status, setStatus, loading, loadAll } = useProdeData();
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => window.localStorage.getItem('prode_nombre') || '');
   const [formScores, setFormScores] = useState({});
   const [tab, setTab] = useState('cargar');
 
@@ -664,7 +733,7 @@ function PublicApp() {
     if (clean === null) return;
     setFormScores((prev) => {
       const current = prev[matchId] || { a: '', b: '', advance: '', penA: '', penB: '' };
-      const next = { ...current, [side]: clean };
+      const next = { ...current, [side]: clean, clear: false };
       const o = next.a !== '' && next.b !== '' ? outcome(next.a, next.b) : '';
       if (o === 'A' || o === 'B') {
         next.advance = o;
@@ -688,7 +757,7 @@ function PublicApp() {
     if (clean === null) return;
     setFormScores((prev) => {
       const current = prev[matchId] || { a: '', b: '', advance: '', penA: '', penB: '' };
-      const next = { ...current, [side]: clean };
+      const next = { ...current, [side]: clean, clear: false };
       const pWinner = penaltyWinner(next.penA, next.penB);
       if (pWinner) next.advance = pWinner;
       return { ...prev, [matchId]: next };
@@ -706,7 +775,7 @@ function PublicApp() {
       return;
     }
 
-    const openMatches = matches.filter((m) => !m.locked && m.real_a === null && m.real_b === null);
+    const openMatches = matches.filter((m) => !isPredictionClosed(m));
     const missing = openMatches.find((m) => {
       const row = formScores[m.id];
       if (!row || row.a === '' || row.b === '') return true;
@@ -782,7 +851,8 @@ function PublicApp() {
       return;
     }
 
-    setStatus('¡Listo! Tu prode quedó guardado.');
+    window.localStorage.setItem('prode_nombre', cleanName);
+    setStatus('¡Listo! Tu prode quedó guardado. Cuando vuelvas a entrar, escribí el mismo nombre o se cargará automáticamente en este dispositivo.');
     await loadAll();
     setTab('ranking');
   }
@@ -845,6 +915,7 @@ function AdminApp() {
   const [adminPin, setAdminPin] = useState('');
   const [adminResults, setAdminResults] = useState({});
   const [adminTeams, setAdminTeams] = useState({});
+  const [dirtyResults, setDirtyResults] = useState({});
 
   function showAdminStatus(message) {
     setStatus(message);
@@ -864,11 +935,16 @@ function AdminApp() {
         penA: m.real_pen_a !== null && m.real_pen_a !== undefined ? String(m.real_pen_a) : '',
         penB: m.real_pen_b !== null && m.real_pen_b !== undefined ? String(m.real_pen_b) : '',
       };
-      nextTeams[m.id] = { teamA: m.team_a, teamB: m.team_b };
+      nextTeams[m.id] = { teamA: m.team_a, teamB: m.team_b, startsAt: isoToDatetimeLocal(m.starts_at) };
     });
     setAdminResults(next);
     setAdminTeams(nextTeams);
+    setDirtyResults({});
   }, [matches]);
+
+  function markResultDirty(matchId) {
+    setDirtyResults((prev) => ({ ...prev, [matchId]: true }));
+  }
 
   function updateTeamName(matchId, field, value) {
     setAdminTeams((prev) => ({
@@ -876,6 +952,7 @@ function AdminApp() {
       [matchId]: {
         teamA: prev[matchId]?.teamA ?? '',
         teamB: prev[matchId]?.teamB ?? '',
+        startsAt: prev[matchId]?.startsAt ?? '',
         [field]: value,
       },
     }));
@@ -884,9 +961,10 @@ function AdminApp() {
   function updateAdminResult(matchId, side, value) {
     const clean = safeNumberValue(value);
     if (clean === null) return;
+    markResultDirty(matchId);
     setAdminResults((prev) => {
       const current = prev[matchId] || { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' };
-      const next = { ...current, [side]: clean };
+      const next = { ...current, [side]: clean, clear: false };
       const o = next.a !== '' && next.b !== '' ? outcome(next.a, next.b) : '';
       if (!next.penalties && (o === 'A' || o === 'B')) next.advance = o;
       return { ...prev, [matchId]: next };
@@ -894,9 +972,10 @@ function AdminApp() {
   }
 
   function updatePenalty(matchId, checked) {
+    markResultDirty(matchId);
     setAdminResults((prev) => {
       const current = prev[matchId] || { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' };
-      const next = { ...current, penalties: checked };
+      const next = { ...current, penalties: checked, clear: false };
       if (!checked) {
         next.penA = '';
         next.penB = '';
@@ -908,18 +987,20 @@ function AdminApp() {
   }
 
   function updateRealAdvance(matchId, value) {
+    markResultDirty(matchId);
     setAdminResults((prev) => ({
       ...prev,
-      [matchId]: { a: prev[matchId]?.a ?? '', b: prev[matchId]?.b ?? '', penalties: prev[matchId]?.penalties ?? false, penA: prev[matchId]?.penA ?? '', penB: prev[matchId]?.penB ?? '', advance: value },
+      [matchId]: { a: prev[matchId]?.a ?? '', b: prev[matchId]?.b ?? '', penalties: prev[matchId]?.penalties ?? false, penA: prev[matchId]?.penA ?? '', penB: prev[matchId]?.penB ?? '', advance: value, clear: false },
     }));
   }
 
   function updateAdminPenaltyScore(matchId, side, value) {
     const clean = safeNumberValue(value);
     if (clean === null) return;
+    markResultDirty(matchId);
     setAdminResults((prev) => {
       const current = prev[matchId] || { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' };
-      const next = { ...current, [side]: clean };
+      const next = { ...current, [side]: clean, clear: false };
       const pWinner = penaltyWinner(next.penA, next.penB);
       if (pWinner) next.advance = pWinner;
       return { ...prev, [matchId]: next };
@@ -927,9 +1008,10 @@ function AdminApp() {
   }
 
   function clearAdminMatchResult(matchId) {
+    markResultDirty(matchId);
     setAdminResults((prev) => ({
       ...prev,
-      [matchId]: { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' },
+      [matchId]: { a: '', b: '', penalties: false, advance: '', penA: '', penB: '', clear: true },
     }));
   }
 
@@ -969,29 +1051,40 @@ function AdminApp() {
 
     const teamUpdates = matches
       .map((m) => {
-        const row = adminTeams[m.id] || { teamA: m.team_a, teamB: m.team_b };
+        const row = adminTeams[m.id] || { teamA: m.team_a, teamB: m.team_b, startsAt: isoToDatetimeLocal(m.starts_at) };
         const teamA = (row.teamA || '').trim();
         const teamB = (row.teamB || '').trim();
+        const startsAtLocal = row.startsAt || '';
+        const currentStartsAtLocal = isoToDatetimeLocal(m.starts_at);
         if (!teamA || !teamB) return null;
-        if (teamA === m.team_a && teamB === m.team_b) return null;
-        return { match_id: m.id, team_a: teamA, team_b: teamB };
+        if (teamA === m.team_a && teamB === m.team_b && startsAtLocal === currentStartsAtLocal) return null;
+        return { match_id: m.id, team_a: teamA, team_b: teamB, starts_at: datetimeLocalToIso(startsAtLocal) };
       })
       .filter(Boolean);
 
     const results = matches
       .map((m) => {
-        const row = adminResults[m.id] || { a: '', b: '', penalties: false, advance: '', penA: '', penB: '' };
+        const row = adminResults[m.id] || { a: '', b: '', penalties: false, advance: '', penA: '', penB: '', clear: false };
+        const isDirty = Boolean(dirtyResults[m.id]);
         const hasAnyInput = row.a !== '' || row.b !== '' || Boolean(row.penalties) || row.advance !== '' || row.penA !== '' || row.penB !== '';
 
+        // Botón “Limpiar resultado”: fuerza que el backend deje el partido pendiente,
+        // incluso si el navegador no detectó bien el estado anterior.
+        if (row.clear) {
+          return { match_id: m.id, clear_result: true };
+        }
+
         if (!hasAnyInput) {
-          return savedResultExists(m) ? { match_id: m.id, clear_result: true } : null;
+          return isDirty || savedResultExists(m) ? { match_id: m.id, clear_result: true } : null;
         }
 
         if (row.a === '' || row.b === '') {
           return { match_id: m.id, invalid_partial: true };
         }
 
-        if (!adminResultChanged(m, row)) return null;
+        // Si el usuario tocó ese partido, lo mandamos igual. Así permite corregir
+        // resultados de prueba aunque coincidan visualmente o haya caché del navegador.
+        if (!isDirty && !adminResultChanged(m, row)) return null;
 
         const o = outcome(row.a, row.b);
         const pWinner = penaltyWinner(row.penA, row.penB);
@@ -1009,7 +1102,7 @@ function AdminApp() {
       .filter(Boolean);
 
     if (results.length === 0 && teamUpdates.length === 0) {
-      setStatus('No hay cambios para guardar. Editá equipos o cargá al menos un resultado real.');
+      setStatus('No hay cambios para guardar. Para borrar un resultado de prueba, tocá “Limpiar resultado / dejar pendiente” en ese partido y después Guardar cambios.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -1053,6 +1146,7 @@ function AdminApp() {
     }
 
     setStatus('✅ Cambios guardados. Ranking actualizado.');
+    setDirtyResults({});
     await loadAll();
   }
 
@@ -1103,6 +1197,7 @@ function AdminApp() {
             clearAdminMatchResult={clearAdminMatchResult}
             adminTeams={adminTeams}
             updateTeamName={updateTeamName}
+            dirtyResults={dirtyResults}
           />
 
           <button className="primary floatingSave adminBottomSave" type="submit">Guardar cambios admin</button>
