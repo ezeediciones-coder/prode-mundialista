@@ -821,3 +821,94 @@ small { color: rgba(255,255,255,.68); }
   border-radius: 10px;
   padding: 9px;
 }
+
+/* Panel admin: barra fija para guardar sin scrollear */
+.adminStickyActions {
+  position: sticky;
+  top: 10px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(3, 27, 16, .92);
+  border: 1px solid rgba(183, 255, 102, .22);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .30);
+  backdrop-filter: blur(12px);
+}
+
+.adminStickyActions .miniBack {
+  margin-right: auto;
+  color: #b7ff66;
+  text-decoration: none;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.stickyPin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255,255,255,.82);
+  font-size: 12px;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.stickyPin input {
+  width: 132px;
+  height: 42px;
+  padding: 0 12px;
+  color: #082915;
+  background: #effff1;
+  border-radius: 12px;
+  font-weight: 900;
+}
+
+.stickySave {
+  min-height: 42px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.adminToast {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #d9ffd1;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.adminBottomSave {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  .adminStickyActions {
+    top: 6px;
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .adminStickyActions .miniBack {
+    width: 100%;
+  }
+  .stickyPin {
+    flex: 1;
+  }
+  .stickyPin input {
+    width: 100%;
+  }
+  .stickySave {
+    flex: 1;
+  }
+  .adminToast {
+    width: 100%;
+    max-width: none;
+  }
+}

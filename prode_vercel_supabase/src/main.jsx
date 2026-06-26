@@ -836,6 +836,12 @@ function AdminApp() {
   const [adminResults, setAdminResults] = useState({});
   const [adminTeams, setAdminTeams] = useState({});
 
+  function showAdminStatus(message) {
+    setStatus(message);
+    window.clearTimeout(window.__prodeAdminToastTimer);
+    window.__prodeAdminToastTimer = window.setTimeout(() => {}, 1);
+  }
+
   useEffect(() => {
     const next = {};
     const nextTeams = {};
@@ -911,11 +917,12 @@ function AdminApp() {
   }
 
   async function submitAdminResults(e) {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     setStatus('');
 
     if (!adminPin.trim()) {
       setStatus('Ingresá el PIN de admin.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -950,6 +957,7 @@ function AdminApp() {
 
     if (results.length === 0 && teamUpdates.length === 0) {
       setStatus('No hay cambios para guardar. Editá equipos o cargá al menos un resultado real.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -963,6 +971,7 @@ function AdminApp() {
     });
     if (invalid) {
       setStatus('Revisá los resultados: si quedó empatado después del alargue, marcá “Fue a penales” y cargá penales con ganador. Si hubo ganador en alargue, cargá el resultado final y no marques penales.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -976,11 +985,13 @@ function AdminApp() {
 
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(body.error || 'No pude guardar los cambios.');
+      const msg = body.error || 'No pude guardar los cambios.';
+      setStatus(msg);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    setStatus('Cambios guardados. Ranking actualizado.');
+    setStatus('✅ Cambios guardados. Ranking actualizado.');
     await loadAll();
   }
 
@@ -995,6 +1006,21 @@ function AdminApp() {
         <span>URL privada: /admin</span>
       </div>
 
+      <div className="adminStickyActions">
+        <a className="miniBack" href="/">← Público</a>
+        <label className="stickyPin">
+          <span>PIN admin</span>
+          <input
+            type="password"
+            value={adminPin}
+            onChange={(e) => setAdminPin(e.target.value)}
+            placeholder="PIN"
+          />
+        </label>
+        <button className="primary stickySave" type="submit" form="adminResultsForm">Guardar cambios</button>
+        {status && <span className="adminToast">{status}</span>}
+      </div>
+
       {status && <div className="status">{status}</div>}
       {loading && <div className="status">Cargando datos...</div>}
 
@@ -1004,17 +1030,7 @@ function AdminApp() {
           <p>Editá los equipos y cargá el resultado final. El alargue cuenta como parte del partido; los penales van aparte si hubo empate.</p>
         </div>
 
-        <form onSubmit={submitAdminResults}>
-          <div className="field pinField">
-            <label>PIN admin</label>
-            <input
-              type="password"
-              value={adminPin}
-              onChange={(e) => setAdminPin(e.target.value)}
-              placeholder="PIN privado"
-            />
-          </div>
-
+        <form id="adminResultsForm" onSubmit={submitAdminResults}>
           <BracketBoard
             matches={matches}
             mode="admin"
@@ -1027,7 +1043,7 @@ function AdminApp() {
             updateTeamName={updateTeamName}
           />
 
-          <button className="primary floatingSave" type="submit">Guardar cambios admin</button>
+          <button className="primary floatingSave adminBottomSave" type="submit">Guardar cambios admin</button>
         </form>
       </section>
 

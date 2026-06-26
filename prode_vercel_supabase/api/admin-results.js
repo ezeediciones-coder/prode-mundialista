@@ -55,7 +55,7 @@ module.exports = async function handler(req, res) {
 
       if (error) {
         console.error(error);
-        return res.status(500).json({ error: 'No pude actualizar los nombres de equipos.' });
+        return res.status(500).json({ error: `No pude actualizar los nombres de equipos: ${error.message || 'error de Supabase'}` });
       }
     }
 
@@ -105,13 +105,13 @@ module.exports = async function handler(req, res) {
 
       if (error) {
         console.error(error);
-        return res.status(500).json({ error: 'No pude actualizar uno de los partidos. Revisá si ejecutaste la migración SQL nueva.' });
+        return res.status(500).json({ error: `No pude actualizar uno de los partidos: ${error.message || 'revisá si ejecutaste la migración SQL nueva'}` });
       }
     }
 
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: 'Error inesperado al guardar resultados.' });
+    return res.status(500).json({ error: `Error inesperado al guardar resultados: ${error.message || error}` });
   }
 };
