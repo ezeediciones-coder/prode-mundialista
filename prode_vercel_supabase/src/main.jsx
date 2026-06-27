@@ -193,6 +193,62 @@ function formatShortDateTime(match) {
   return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function formatMatchDatePill(match) {
+  const d = getStartsAtDate(match);
+  if (!d) return 'Sin horario';
+  return d.toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function teamFlag(teamName = '') {
+  const key = teamName
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (!key || key.includes('grupo') || key.includes('equipo')) return '⚽';
+
+  const flags = {
+    'sudafrica': '🇿🇦',
+    'canada': '🇨🇦',
+    'brasil': '🇧🇷',
+    'japon': '🇯🇵',
+    'alemania': '🇩🇪',
+    'paraguay': '🇵🇾',
+    'paises bajos': '🇳🇱',
+    'marruecos': '🇲🇦',
+    'costa de marfil': '🇨🇮',
+    'noruega': '🇳🇴',
+    'francia': '🇫🇷',
+    'suecia': '🇸🇪',
+    'mexico': '🇲🇽',
+    'estados unidos': '🇺🇸',
+    'bosnia y herzegovina': '🇧🇦',
+    'espana': '🇪🇸',
+    'suiza': '🇨🇭',
+    'australia': '🇦🇺',
+    'argentina': '🇦🇷',
+    'cabo verde': '🇨🇻',
+    'croacia': '🇭🇷',
+    'ghana': '🇬🇭',
+    'panama': '🇵🇦',
+    'portugal': '🇵🇹',
+    'colombia': '🇨🇴',
+    'egipto': '🇪🇬',
+    'iran': '🇮🇷',
+    'belgica': '🇧🇪',
+    'uruguay': '🇺🇾',
+  };
+
+  return flags[key] || '⚽';
+}
+
 function isoToDatetimeLocal(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -649,7 +705,7 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
   return (
     <article className={`bracketMatch ${locked ? 'locked' : ''} ${saved ? 'hasSavedPrediction' : ''}`}>
       <div className="matchLabelRow">
-        <div className="matchLabel">Partido {match.match_no}</div>
+        <div className="matchLabel">Partido {match.match_no} · {formatMatchDatePill(match)}</div>
         {saved && !locked && !editing && (
           <button className="editPredictionButton" type="button" onClick={() => setEditing(true)} title="Editar este prode antes del cierre">
             ✏️ Editar
@@ -670,13 +726,13 @@ function MatchCardPublic({ match, formScores, updateScore, updateAdvance, update
       </div>
 
       <div className={`bracketTeam ${advancePick === 'A' ? 'picked' : ''} ${realAdvance === 'A' ? 'advanced' : ''}`}>
-        <span className="teamName">{match.team_a}</span>
+        <span className="teamName">{teamFlag(match.team_a)} {match.team_a}</span>
         <input aria-label={`Pronóstico ${match.team_a}`} inputMode="numeric" value={predA} onChange={(e) => updateScore(match.id, 'a', e.target.value)} disabled={!canEdit} />
         <span className="realBox">{match.real_a ?? '-'}</span>
       </div>
 
       <div className={`bracketTeam ${advancePick === 'B' ? 'picked' : ''} ${realAdvance === 'B' ? 'advanced' : ''}`}>
-        <span className="teamName">{match.team_b}</span>
+        <span className="teamName">{teamFlag(match.team_b)} {match.team_b}</span>
         <input aria-label={`Pronóstico ${match.team_b}`} inputMode="numeric" value={predB} onChange={(e) => updateScore(match.id, 'b', e.target.value)} disabled={!canEdit} />
         <span className="realBox">{match.real_b ?? '-'}</span>
       </div>
@@ -726,7 +782,7 @@ function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty,
 
   return (
     <article className="bracketMatch adminMatch">
-      <div className="matchLabel">Partido {match.match_no}</div>
+      <div className="matchLabel">Partido {match.match_no} · {formatMatchDatePill(match)}</div>
       {isDirty && <div className={`adminEditBadge ${isClearPending ? 'clearPending' : ''}`}>{isClearPending ? 'Pendiente al guardar' : 'Cambio sin guardar'}</div>}
       <div className="teamEditGrid">
         <label>
@@ -749,12 +805,12 @@ function MatchCardAdmin({ match, adminResults, updateAdminResult, updatePenalty,
       </div>
 
       <div className={`bracketTeam ${inferredAdvance === 'A' ? 'advanced' : ''}`}>
-        <span className="teamName">{teamA}</span>
+        <span className="teamName">{teamFlag(teamA)} {teamA}</span>
         <input aria-label={`Real ${teamA}`} inputMode="numeric" value={current.a} onChange={(e) => updateAdminResult(match.id, 'a', e.target.value)} />
       </div>
 
       <div className={`bracketTeam ${inferredAdvance === 'B' ? 'advanced' : ''}`}>
-        <span className="teamName">{teamB}</span>
+        <span className="teamName">{teamFlag(teamB)} {teamB}</span>
         <input aria-label={`Real ${teamB}`} inputMode="numeric" value={current.b} onChange={(e) => updateAdminResult(match.id, 'b', e.target.value)} />
       </div>
 
@@ -1360,6 +1416,10 @@ function PrizeAdminPanel({ settings, adminPin, setStatus, loadAll }) {
         <p>Configurá el pozo acumulado y cómo se reparte en el ranking.</p>
       </div>
 
+      <button className="primary" type="button" onClick={savePrizeSettings}>
+        Guardar premios
+      </button>
+
       <div className="teamEditGrid">
         <label>
           Activar premios
@@ -1824,7 +1884,7 @@ function AdminApp() {
             placeholder="PIN"
           />
         </label>
-        <button className="primary stickySave" type="submit" form="adminResultsForm">Guardar cambios</button>
+        <button className="primary stickySave" type="submit" form="adminResultsForm">Guardar resultados</button>
         {status && <span className="adminToast">{status}</span>}
       </div>
 
