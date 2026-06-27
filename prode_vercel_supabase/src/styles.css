@@ -1041,3 +1041,57 @@ small { color: rgba(255,255,255,.68); }
 .teamEditGrid input[type="datetime-local"] {
   font-size: 12px;
 }
+/* ================================
+   PREMIOS / RANKING MÁS LEGIBLE
+================================ */
+
+.prizeGrid .ruleCard strong {
+  font-size: 1.05rem;
+}
+
+.prizeGrid .ruleCard:first-child span:first-of-type b {
+  display: block;
+  margin-top: 8px;
+  font-size: 2rem;
+  line-height: 1;
+  color: #ffd84d;
+}
+
+.prizeGrid .ruleCard:not(:first-child) span:first-of-type {
+  margin-top: 8px;
+  font-size: 1rem;
+}
+
+.prizeGrid .ruleCard:not(:first-child) span:first-of-type b {
+  font-size: 1.25rem;
+  color: #ffd84d;
+}
+
+.prizeGrid .ruleCard:not(:first-child) span:nth-of-type(2) {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.55rem;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.rankRow .points {
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.rankRow .points span {
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.rankRow .points small {
+  display: block;
+  font-size: 1.15rem;
+  line-height: 1;
+  font-weight: 900;
+  color: #ffd84d;
+}
