@@ -279,6 +279,22 @@ async function callParticipantAccess(payload) {
   return body;
 }
 
+async function fetchPrizeSettingsFromApi() {
+  const response = await fetch(`/api/prode-settings?t=${Date.now()}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+  });
+
+  const body = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(body.error || 'No pude cargar la configuración de premios.');
+  }
+
+  return body.settings || null;
+}
+
 const DEFAULT_PRODE_SETTINGS = {
   id: 'main',
   prize_enabled: true,
@@ -464,22 +480,31 @@ function useProdeData({ admin = false } = {}) {
       ? '*'
       : 'id,name,name_key,status,created_at';
 
-    const [mRes, pRes, prRes, sRes] = await Promise.all([
+    const [mRes, pRes, prRes, settingsRes] = await Promise.allSettled([
       supabase.from('matches').select('*').order('match_no', { ascending: true }),
       supabase.from('participants').select(participantColumns).order('created_at', { ascending: true }),
       supabase.from('predictions').select('*'),
-      supabase.from('prode_settings').select('*').eq('id', 'main').maybeSingle(),
+      fetchPrizeSettingsFromApi(),
     ]);
 
-    if (mRes.error || pRes.error || prRes.error || sRes.error) {
-      setStatus('No pude cargar los datos. Revisá Supabase, las políticas RLS y la tabla prode_settings.');
-      console.error(mRes.error || pRes.error || prRes.error || sRes.error);
+    const matchesResult = mRes.status === 'fulfilled' ? mRes.value : { error: mRes.reason };
+    const participantsResult = pRes.status === 'fulfilled' ? pRes.value : { error: pRes.reason };
+    const predictionsResult = prRes.status === 'fulfilled' ? prRes.value : { error: prRes.reason };
+    const settingsResult = settingsRes.status === 'fulfilled' ? settingsRes.value : null;
+
+    if (matchesResult.error || participantsResult.error || predictionsResult.error) {
+      setStatus('No pude cargar los datos. Revisá Supabase y las políticas RLS.');
+      console.error(matchesResult.error || participantsResult.error || predictionsResult.error);
     } else {
-      setMatches(mRes.data || []);
-      setParticipants(pRes.data || []);
-      setPredictions(prRes.data || []);
-      setSettings(normalizePrizeSettings(sRes.data));
+      setMatches(matchesResult.data || []);
+      setParticipants(participantsResult.data || []);
+      setPredictions(predictionsResult.data || []);
+      setSettings(normalizePrizeSettings(settingsResult));
       setStatus('');
+    }
+
+    if (settingsRes.status === 'rejected') {
+      console.error('No pude cargar premios desde /api/prode-settings:', settingsRes.reason);
     }
     setLoading(false);
   }
@@ -496,7 +521,6 @@ function useProdeData({ admin = false } = {}) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, loadAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, loadAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, loadAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prode_settings' }, loadAll)
       .subscribe();
 
     return () => {
@@ -519,13 +543,21 @@ function Header({ admin = false }) {
           <span>Partido: +6 o +3</span>
           <span>Penales suman extra</span>
           <span>Alargue cuenta</span>
-          <span className="ruleHelp">Reglas <PointsTooltip /></span>
         </div>
       </div>
-      <div className="heroCard" aria-hidden="true">
-        <div className="shirt">10</div>
-        <div className="cup">🏆</div>
-        <div className="ball">⚽</div>
+      <div className="heroCard" aria-hidden="true" style={{ overflow: 'hidden', padding: 0 }}>
+        <img
+          src="/hero-messi-prode.jpg"
+          alt=""
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'block',
+            objectFit: 'cover',
+            objectPosition: 'center',
+            borderRadius: 'inherit',
+          }}
+        />
       </div>
     </section>
   );
