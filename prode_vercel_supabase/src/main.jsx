@@ -564,6 +564,7 @@ function Header({ admin = false }) {
 }
 
 function RankingPanel({ participants, predictions, matches, settings }) {
+  const [selectedParticipantId, setSelectedParticipantId] = useState(null);
   const prizeSettings = normalizePrizeSettings(settings);
   const prizeRows = useMemo(() => buildPrizeRows(prizeSettings), [prizeSettings]);
 
@@ -604,6 +605,39 @@ function RankingPanel({ participants, predictions, matches, settings }) {
       });
   }, [participants, predictions, matches]);
 
+  const selectedParticipant = ranking.find((p) => p.id === selectedParticipantId) || null;
+
+  const visiblePredictions = useMemo(() => {
+    if (!selectedParticipantId) return [];
+
+    return predictions
+      .filter((prediction) => prediction.participant_id === selectedParticipantId)
+      .map((prediction) => {
+        const match = matches.find((m) => m.id === prediction.match_id);
+
+        // Privacidad: no mostramos el prode hasta que el admin cargue el resultado real.
+        if (!match || match.real_a === null || match.real_b === null) return null;
+
+        const result = scorePrediction(prediction, match);
+
+        return {
+          prediction,
+          match,
+          result,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.match.match_no - b.match.match_no);
+  }, [selectedParticipantId, predictions, matches]);
+
+  function openParticipantDetails(row) {
+    setSelectedParticipantId(row.id);
+  }
+
+  function closeParticipantDetails() {
+    setSelectedParticipantId(null);
+  }
+
   return (
     <section className="panel rankingPanel">
       <div className="sectionTitle">
@@ -632,11 +666,26 @@ function RankingPanel({ participants, predictions, matches, settings }) {
       <div className="rankingList">
         {ranking.length === 0 && <p>Todavía no hay participantes registrados.</p>}
         {ranking.map((row, index) => (
-          <div key={row.id} className={`rankRow rank${index + 1}`}>
+          <div
+            key={row.id}
+            className={`rankRow rank${index + 1}`}
+            role="button"
+            tabIndex="0"
+            onClick={() => openParticipantDetails(row)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openParticipantDetails(row);
+              }
+            }}
+            title="Ver pronósticos visibles de este participante"
+            style={{ cursor: 'pointer' }}
+          >
             <div className="position">{index + 1}</div>
             <div className="rankInfo">
               <strong>{row.name}</strong>
               <span>{row.exacts} exactos · {row.advanceOnly} clasificados · {row.predictionsCount} pronósticos</span>
+              <small>Ver prodes finalizados</small>
             </div>
             <div className="points">
               <span>{row.points} pts</span>
@@ -647,6 +696,76 @@ function RankingPanel({ participants, predictions, matches, settings }) {
           </div>
         ))}
       </div>
+
+      {selectedParticipant && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Pronósticos visibles de ${selectedParticipant.name}`}
+          onClick={closeParticipantDetails}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0, 0, 0, 0.72)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            className="panel"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(920px, 100%)',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              margin: 0,
+            }}
+          >
+            <div className="sectionTitle">
+              <div>
+                <h2>Pronósticos de {selectedParticipant.name}</h2>
+                <p>Solo se muestran partidos que ya tienen resultado real cargado.</p>
+              </div>
+              <button className="ghost" type="button" onClick={closeParticipantDetails}>
+                Cerrar
+              </button>
+            </div>
+
+            {visiblePredictions.length === 0 ? (
+              <div className="status">
+                Todavía no hay pronósticos visibles para este participante. Se van a mostrar cuando el admin cargue resultados reales.
+              </div>
+            ) : (
+              <div className="resultsTable">
+                {visiblePredictions.map(({ prediction, match, result }) => (
+                  <div key={prediction.id} className="resultRow">
+                    <span>#{match.match_no}</span>
+                    <strong>
+                      {teamFlag(match.team_a)} {match.team_a} vs {teamFlag(match.team_b)} {match.team_b}
+                    </strong>
+                    <em>
+                      Prode: {prediction.pred_a} - {prediction.pred_b}
+                      {outcome(prediction.pred_a, prediction.pred_b) === 'D' && prediction.advance_pick
+                        ? ` · avanzaba ${sideName(match, prediction.advance_pick)}`
+                        : ''}
+                      {prediction.pred_pen_a !== null && prediction.pred_pen_b !== null
+                        ? ` · penales ${prediction.pred_pen_a}-${prediction.pred_pen_b}`
+                        : ''}
+                      <br />
+                      Real: {formatResult(match)}
+                      <br />
+                      <b>Sumó: {result.points} pts</b> · {result.label}
+                    </em>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
