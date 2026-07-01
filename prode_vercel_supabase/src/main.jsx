@@ -344,6 +344,44 @@ function formatPrizeAmount(settings, amount) {
   return `${currency}${value.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
 }
 
+function formatAuditTimestamp(value) {
+  if (!value) return 'Sin fecha';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'Sin fecha';
+  return d.toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatPredictionDataForAudit(data, match) {
+  if (!data) return 'Sin datos';
+  const a = data.pred_a ?? '-';
+  const b = data.pred_b ?? '-';
+  const advance = data.advance_pick ? sideName(match, data.advance_pick) : '';
+  const penA = data.pred_pen_a;
+  const penB = data.pred_pen_b;
+  const penalties = penA !== null && penA !== undefined && penB !== null && penB !== undefined
+    ? ` · penales ${penA}-${penB}`
+    : '';
+  return `${a}-${b}${advance ? ` · avanza ${advance}` : ''}${penalties}`;
+}
+
+function formatRealResultDataForAudit(data, match) {
+  if (!data) return 'Sin datos';
+  const a = data.real_a ?? '-';
+  const b = data.real_b ?? '-';
+  const advance = data.advance_winner ? sideName(match, data.advance_winner) : '';
+  const penalties = data.went_penalties
+    ? ` · penales ${data.real_pen_a ?? '-'}-${data.real_pen_b ?? '-'}`
+    : '';
+  return `${a}-${b}${penalties}${advance ? ` · avanzó ${advance}` : ''}`;
+}
+
 function buildPrizeRows(settings) {
   const normalized = normalizePrizeSettings(settings);
   return normalized.prize_distribution.map((item) => {
@@ -463,6 +501,7 @@ function useProdeData({ admin = false } = {}) {
   const [matches, setMatches] = useState([]);
   const [participants, setParticipants] = useState([]);
   const [predictions, setPredictions] = useState([]);
+  const [auditLog, setAuditLog] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_PRODE_SETTINGS);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
@@ -480,16 +519,22 @@ function useProdeData({ admin = false } = {}) {
       ? '*'
       : 'id,name,name_key,status,created_at';
 
-    const [mRes, pRes, prRes, settingsRes] = await Promise.allSettled([
+    const [mRes, pRes, prRes, auditRes, settingsRes] = await Promise.allSettled([
       supabase.from('matches').select('*').order('match_no', { ascending: true }),
       supabase.from('participants').select(participantColumns).order('created_at', { ascending: true }),
       supabase.from('predictions').select('*'),
+      supabase
+        .from('prode_audit_log')
+        .select('id,created_at,event_type,table_name,participant_id,participant_name,match_id,match_no,team_a,team_b,old_data,new_data')
+        .order('created_at', { ascending: false })
+        .limit(250),
       fetchPrizeSettingsFromApi(),
     ]);
 
     const matchesResult = mRes.status === 'fulfilled' ? mRes.value : { error: mRes.reason };
     const participantsResult = pRes.status === 'fulfilled' ? pRes.value : { error: pRes.reason };
     const predictionsResult = prRes.status === 'fulfilled' ? prRes.value : { error: prRes.reason };
+    const auditResult = auditRes.status === 'fulfilled' ? auditRes.value : { error: auditRes.reason };
     const settingsResult = settingsRes.status === 'fulfilled' ? settingsRes.value : null;
 
     if (matchesResult.error || participantsResult.error || predictionsResult.error) {
@@ -499,8 +544,13 @@ function useProdeData({ admin = false } = {}) {
       setMatches(matchesResult.data || []);
       setParticipants(participantsResult.data || []);
       setPredictions(predictionsResult.data || []);
+      setAuditLog(auditResult.error ? [] : (auditResult.data || []));
       setSettings(normalizePrizeSettings(settingsResult));
       setStatus('');
+    }
+
+    if (auditRes.status === 'rejected' || auditResult.error) {
+      console.error('No pude cargar auditoría desde prode_audit_log:', auditResult.error || auditRes.reason);
     }
 
     if (settingsRes.status === 'rejected') {
@@ -521,6 +571,7 @@ function useProdeData({ admin = false } = {}) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, loadAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, loadAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prode_audit_log' }, loadAll)
       .subscribe();
 
     return () => {
@@ -528,7 +579,7 @@ function useProdeData({ admin = false } = {}) {
     };
   }, [admin]);
 
-  return { matches, participants, predictions, settings, status, setStatus, loading, loadAll };
+  return { matches, participants, predictions, auditLog, settings, status, setStatus, loading, loadAll };
 }
 
 function Header({ admin = false }) {
@@ -778,6 +829,119 @@ function formatResult(m) {
     ? ` · penales ${m.real_pen_a ?? '-'}-${m.real_pen_b ?? '-'}`
     : '';
   return `${base}${pens}${adv ? ` · avanzó ${sideName(m, adv)}` : ''}`;
+}
+
+
+function TransparencyPanel({ participants, predictions, matches, auditLog }) {
+  const approvedParticipants = participants.filter((participant) => !participant.status || participant.status === 'approved');
+
+  const participantRows = useMemo(() => {
+    return approvedParticipants
+      .map((participant) => {
+        const userPredictions = predictions.filter((prediction) => prediction.participant_id === participant.id);
+        const dates = userPredictions
+          .map((prediction) => prediction.updated_at)
+          .filter(Boolean)
+          .map((value) => new Date(value))
+          .filter((date) => !Number.isNaN(date.getTime()))
+          .sort((a, b) => a.getTime() - b.getTime());
+
+        return {
+          participant,
+          count: userPredictions.length,
+          first: dates[0] || null,
+          last: dates[dates.length - 1] || null,
+        };
+      })
+      .sort((a, b) => {
+        if (!a.last && !b.last) return a.participant.name.localeCompare(b.participant.name);
+        if (!a.last) return 1;
+        if (!b.last) return -1;
+        return b.last.getTime() - a.last.getTime();
+      });
+  }, [approvedParticipants, predictions]);
+
+  const visibleAuditRows = useMemo(() => {
+    return (auditLog || []).slice(0, 80).map((item) => {
+      const match = matches.find((m) => m.id === item.match_id) || matches.find((m) => m.match_no === item.match_no) || {
+        match_no: item.match_no,
+        team_a: item.team_a,
+        team_b: item.team_b,
+      };
+      const matchFinished = match?.real_a !== null && match?.real_a !== undefined && match?.real_b !== null && match?.real_b !== undefined;
+      let title = '';
+      let detail = '';
+
+      if (item.table_name === 'predictions') {
+        const action = item.event_type === 'INSERT' || item.event_type === 'SNAPSHOT_INICIAL'
+          ? 'cargó'
+          : item.event_type === 'UPDATE'
+            ? 'editó'
+            : item.event_type === 'DELETE'
+              ? 'eliminó'
+              : 'modificó';
+
+        title = `${item.participant_name || 'Participante'} ${action} su prode del Partido ${item.match_no}`;
+        detail = matchFinished
+          ? `Prode visible: ${formatPredictionDataForAudit(item.new_data || item.old_data, match)}`
+          : 'Contenido oculto hasta que el admin cargue el resultado real de ese partido.';
+      } else if (item.table_name === 'matches') {
+        title = `Admin cargó o modificó el resultado real del Partido ${item.match_no}`;
+        detail = `Resultado: ${formatRealResultDataForAudit(item.new_data, match)}`;
+      } else {
+        title = `${item.event_type} en ${item.table_name}`;
+        detail = 'Cambio registrado en auditoría.';
+      }
+
+      return { ...item, match, title, detail };
+    });
+  }, [auditLog, matches]);
+
+  return (
+    <section className="panel">
+      <div className="sectionTitle">
+        <h2>Transparencia de cargas</h2>
+        <p>Todos pueden ver cuándo quedó guardado cada prode. Los resultados elegidos se muestran recién cuando el partido ya tiene resultado real cargado.</p>
+      </div>
+
+      <div className="resultsTable">
+        {participantRows.map((row) => (
+          <div key={row.participant.id} className="resultRow">
+            <span>{row.count}/16</span>
+            <strong>{row.participant.name}</strong>
+            <em>
+              {row.count === 0
+                ? 'Todavía no registró pronósticos.'
+                : `Primera carga: ${formatAuditTimestamp(row.first)} · Última modificación: ${formatAuditTimestamp(row.last)}`}
+            </em>
+          </div>
+        ))}
+      </div>
+
+      <div className="sectionTitle" style={{ marginTop: 24 }}>
+        <h3>Últimos movimientos auditados</h3>
+        <p>La auditoría empezó desde que fue activada. Los movimientos anteriores se ven por “última modificación” en la tabla de arriba.</p>
+      </div>
+
+      <div className="resultsTable">
+        {visibleAuditRows.length === 0 && (
+          <div className="resultRow">
+            <span>—</span>
+            <strong>Sin movimientos nuevos auditados</strong>
+            <em>Cuando alguien edite un prode o el admin cargue un resultado real, aparecerá acá.</em>
+          </div>
+        )}
+
+        {visibleAuditRows.map((item) => (
+          <div key={item.id} className="resultRow">
+            <span>{formatAuditTimestamp(item.created_at)}</span>
+            <strong>{item.title}</strong>
+            <em>{item.detail}</em>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function ResultsPanel({ matches }) {
@@ -1071,7 +1235,7 @@ function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, u
 }
 
 function PublicApp() {
-  const { matches, participants, predictions, settings, status, setStatus, loading, loadAll } = useProdeData();
+  const { matches, participants, predictions, auditLog, settings, status, setStatus, loading, loadAll } = useProdeData();
   const [name, setName] = useState(() => window.localStorage.getItem('prode_nombre') || '');
   const [accessCode, setAccessCode] = useState(() => window.localStorage.getItem('prode_codigo') || '');
   const [accessMode, setAccessMode] = useState(() => (window.localStorage.getItem('prode_acceso_ok') === '1' ? 'login' : 'intro'));
@@ -1347,6 +1511,7 @@ function PublicApp() {
       <nav className="tabs">
         <button className={tab === 'cargar' ? 'active' : ''} onClick={() => setTab('cargar')}>Cargar llave</button>
         <button className={tab === 'ranking' ? 'active' : ''} onClick={() => setTab('ranking')}>Ranking</button>
+        <button className={tab === 'transparencia' ? 'active' : ''} onClick={() => setTab('transparencia')}>Transparencia</button>
         <button className={tab === 'resultados' ? 'active' : ''} onClick={() => setTab('resultados')}>Resultados</button>
       </nav>
 
@@ -1488,6 +1653,7 @@ function PublicApp() {
       )}
 
       {tab === 'ranking' && <RankingPanel participants={participants} predictions={predictions} matches={matches} settings={settings} />}
+      {tab === 'transparencia' && <TransparencyPanel participants={participants} predictions={predictions} matches={matches} auditLog={auditLog} />}
       {tab === 'resultados' && <ResultsPanel matches={matches} />}
     </main>
   );
