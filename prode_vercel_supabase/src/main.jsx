@@ -15,6 +15,27 @@ const ROUNDS = [
   { id: 'final', title: 'Final', count: 1, start: 31 },
 ];
 
+const CURRENT_ROUND = {
+  id: 'r16',
+  title: '8vos de final',
+  label: '8vos',
+  start: 17,
+  end: 24,
+  count: 8,
+};
+
+function isCurrentRoundMatch(match) {
+  if (!match) return false;
+  const matchNo = Number(match.match_no);
+  return match.round === CURRENT_ROUND.id || (matchNo >= CURRENT_ROUND.start && matchNo <= CURRENT_ROUND.end);
+}
+
+function getCurrentRoundMatches(matches) {
+  return (matches || [])
+    .filter(isCurrentRoundMatch)
+    .sort((a, b) => Number(a.match_no) - Number(b.match_no));
+}
+
 function normalizeName(value) {
   return value
     .trim()
@@ -623,12 +644,16 @@ function RankingPanel({ participants, predictions, matches, settings }) {
   const [selectedParticipantId, setSelectedParticipantId] = useState(null);
   const prizeSettings = normalizePrizeSettings(settings);
   const prizeRows = useMemo(() => buildPrizeRows(prizeSettings), [prizeSettings]);
+  const currentMatches = useMemo(() => getCurrentRoundMatches(matches), [matches]);
+  const totalCurrentMatches = currentMatches.length || CURRENT_ROUND.count;
 
   const ranking = useMemo(() => {
+    const currentMatchIds = new Set(getCurrentRoundMatches(matches).map((m) => m.id));
+
     return participants
       .filter((participant) => !participant.status || participant.status === 'approved')
       .map((participant) => {
-        const userPredictions = predictions.filter((p) => p.participant_id === participant.id);
+        const userPredictions = predictions.filter((p) => p.participant_id === participant.id && currentMatchIds.has(p.match_id));
         let points = 0;
         let exacts = 0;
         let advanceOnly = 0;
@@ -666,8 +691,10 @@ function RankingPanel({ participants, predictions, matches, settings }) {
   const visiblePredictions = useMemo(() => {
     if (!selectedParticipantId) return [];
 
+    const currentMatchIds = new Set(getCurrentRoundMatches(matches).map((m) => m.id));
+
     return predictions
-      .filter((prediction) => prediction.participant_id === selectedParticipantId)
+      .filter((prediction) => prediction.participant_id === selectedParticipantId && currentMatchIds.has(prediction.match_id))
       .map((prediction) => {
         const match = matches.find((m) => m.id === prediction.match_id);
 
@@ -697,8 +724,8 @@ function RankingPanel({ participants, predictions, matches, settings }) {
   return (
     <section className="panel rankingPanel">
       <div className="sectionTitle">
-        <h2>Ranking familiar <PointsTooltip /></h2>
-        <p>En empate, gana quien tenga más exactos y después más clasificados acertados.</p>
+        <h2>Ranking {CURRENT_ROUND.label} <PointsTooltip /></h2>
+        <p>Los puntos de 16avos quedan como historial. En {CURRENT_ROUND.label}, todos arrancan de 0.</p>
       </div>
 
       {prizeSettings.prize_enabled && (
@@ -740,7 +767,7 @@ function RankingPanel({ participants, predictions, matches, settings }) {
             <div className="position">{index + 1}</div>
             <div className="rankInfo">
               <strong>{row.name}</strong>
-              <span>{row.exacts} exactos · {row.advanceOnly} clasificados · {row.predictionsCount} pronósticos</span>
+              <span>{row.exacts} exactos · {row.advanceOnly} clasificados · {row.predictionsCount}/{totalCurrentMatches} pronósticos de {CURRENT_ROUND.label}</span>
               <small>Ver prodes finalizados</small>
             </div>
             <div className="points">
@@ -782,8 +809,8 @@ function RankingPanel({ participants, predictions, matches, settings }) {
           >
             <div className="sectionTitle">
               <div>
-                <h2>Pronósticos de {selectedParticipant.name}</h2>
-                <p>Solo se muestran partidos que ya tienen resultado real cargado.</p>
+                <h2>Pronósticos de {CURRENT_ROUND.label} de {selectedParticipant.name}</h2>
+                <p>Solo se muestran partidos de {CURRENT_ROUND.label} que ya tienen resultado real cargado.</p>
               </div>
               <button className="ghost" type="button" onClick={closeParticipantDetails}>
                 Cerrar
@@ -792,7 +819,7 @@ function RankingPanel({ participants, predictions, matches, settings }) {
 
             {visiblePredictions.length === 0 ? (
               <div className="status">
-                Todavía no hay pronósticos visibles para este participante. Se van a mostrar cuando el admin cargue resultados reales.
+                Todavía no hay pronósticos visibles de 8vos para este participante. Se van a mostrar cuando el admin cargue resultados reales de esta fase.
               </div>
             ) : (
               <div className="resultsTable">
@@ -839,12 +866,15 @@ function formatResult(m) {
 
 function TransparencyPanel({ participants, predictions, matches, auditLog }) {
   const approvedParticipants = participants.filter((participant) => !participant.status || participant.status === 'approved');
-  const totalMatches = matches.length || 16;
+  const currentMatches = useMemo(() => getCurrentRoundMatches(matches), [matches]);
+  const totalMatches = currentMatches.length || CURRENT_ROUND.count;
 
   const participantRows = useMemo(() => {
+    const currentMatchIds = new Set(getCurrentRoundMatches(matches).map((m) => m.id));
+
     return approvedParticipants
       .map((participant) => {
-        const userPredictions = predictions.filter((prediction) => prediction.participant_id === participant.id);
+        const userPredictions = predictions.filter((prediction) => prediction.participant_id === participant.id && currentMatchIds.has(prediction.match_id));
         const dates = userPredictions
           .map((prediction) => prediction.updated_at)
           .filter(Boolean)
@@ -865,10 +895,16 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
         if (!b.last) return -1;
         return b.last.getTime() - a.last.getTime();
       });
-  }, [approvedParticipants, predictions]);
+  }, [approvedParticipants, predictions, matches]);
 
   const visibleAuditRows = useMemo(() => {
-    return (auditLog || []).slice(0, 80).map((item) => {
+    return (auditLog || [])
+      .filter((item) => {
+        const matchNo = Number(item.match_no);
+        return matchNo >= CURRENT_ROUND.start && matchNo <= CURRENT_ROUND.end;
+      })
+      .slice(0, 80)
+      .map((item) => {
       const match = matches.find((m) => m.id === item.match_id) || matches.find((m) => m.match_no === item.match_no) || {
         match_no: item.match_no,
         team_a: item.team_a,
@@ -907,8 +943,8 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
   return (
     <section className="panel">
       <div className="sectionTitle">
-        <h2>Transparencia de cargas</h2>
-        <p>Todos pueden ver cuándo quedó guardado cada prode. Los resultados elegidos se muestran recién cuando el partido ya tiene resultado real cargado.</p>
+        <h2>Transparencia de cargas - {CURRENT_ROUND.label}</h2>
+        <p>Todos pueden ver cuándo quedó guardado cada prode de {CURRENT_ROUND.label}. Los resultados elegidos se muestran recién cuando el partido ya tiene resultado real cargado.</p>
       </div>
 
       <div className="resultsTable">
@@ -918,7 +954,7 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
             <strong>{row.participant.name}</strong>
             <em>
               {row.count === 0
-                ? 'Todavía no registró pronósticos.'
+                ? 'Todavía no registró pronósticos de 8vos.'
                 : `Primera carga: ${formatAuditTimestamp(row.first)} · Última modificación: ${formatAuditTimestamp(row.last)}`}
             </em>
           </div>
@@ -935,7 +971,7 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
           <div className="resultRow">
             <span>—</span>
             <strong>Sin movimientos nuevos auditados</strong>
-            <em>Cuando alguien edite un prode o el admin cargue un resultado real, aparecerá acá.</em>
+            <em>Cuando alguien edite un prode de 8vos o el admin cargue un resultado real de esta fase, aparecerá acá.</em>
           </div>
         )}
 
@@ -1458,7 +1494,13 @@ function PublicApp() {
       return;
     }
 
-    const openMatches = matches.filter((m) => !isPredictionClosed(m));
+    const openMatches = matches.filter((m) => isCurrentRoundMatch(m) && !isPredictionClosed(m));
+
+    if (openMatches.length === 0) {
+      setStatus(`No hay partidos abiertos de ${CURRENT_ROUND.label} para cargar en este momento.`);
+      return;
+    }
+
     const missing = openMatches.find((m) => {
       const row = formScores[m.id];
       if (!row || row.a === '' || row.b === '') return true;
@@ -1514,7 +1556,7 @@ function PublicApp() {
     }
 
     window.localStorage.setItem('prode_nombre', participant.name || name.trim());
-    setStatus('¡Listo! Tu prode quedó guardado. Podés volver a entrar con tu nombre y código.');
+    setStatus('¡Listo! Tu prode de 8vos quedó guardado. Podés volver a entrar con tu nombre y código.');
     await loadAll();
     setTab('ranking');
   }
