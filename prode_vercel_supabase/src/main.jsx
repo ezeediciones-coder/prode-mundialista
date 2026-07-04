@@ -9,7 +9,7 @@ const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supa
 
 const ROUNDS = [
   { id: 'r32', title: '16avos de final', count: 16, start: 1 },
-  { id: 'r16', title: 'Octavos de final', count: 8, start: 17 },
+  { id: 'r16', title: '8vos de final', count: 8, start: 17 },
   { id: 'qf', title: 'Cuartos de final', count: 4, start: 25 },
   { id: 'sf', title: 'Semifinales', count: 2, start: 29 },
   { id: 'final', title: 'Final', count: 1, start: 31 },
@@ -243,6 +243,11 @@ function teamFlag(teamName = '') {
     'egipto': '🇪🇬',
     'iran': '🇮🇷',
     'belgica': '🇧🇪',
+    'inglaterra': '🏴',
+    'rd congo': '🇨🇩',
+    'republica democratica del congo': '🇨🇩',
+    'senegal': '🇸🇳',
+    'argelia': '🇩🇿',
     'uruguay': '🇺🇾',
   };
 
@@ -588,8 +593,8 @@ function Header({ admin = false }) {
       <div className="heroGlow"></div>
       <div className="heroText">
         <p className="eyebrow">🏆 Familia · Mundial · Prode</p>
-        <h1>{admin ? 'Panel Admin' : 'Prode 16avos'}</h1>
-        <p>{admin ? 'Cargá los resultados reales, penales y clasificados.' : 'Completá tu llave mundialista y peleá el ranking familiar en vivo.'}</p>
+        <h1>{admin ? 'Panel Admin' : 'Prode 8vos'}</h1>
+        <p>{admin ? 'Cargá los resultados reales, penales y clasificados.' : 'Completá tus 8vos de final y peleá el ranking familiar en vivo.'}</p>
         <div className="rules">
           <span>Partido: +6 o +3</span>
           <span>Penales suman extra</span>
@@ -834,6 +839,7 @@ function formatResult(m) {
 
 function TransparencyPanel({ participants, predictions, matches, auditLog }) {
   const approvedParticipants = participants.filter((participant) => !participant.status || participant.status === 'approved');
+  const totalMatches = matches.length || 16;
 
   const participantRows = useMemo(() => {
     return approvedParticipants
@@ -873,11 +879,12 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
       let detail = '';
 
       if (item.table_name === 'predictions') {
-        const action = item.event_type === 'INSERT' || item.event_type === 'SNAPSHOT_INICIAL'
+        const eventType = String(item.event_type || '').toUpperCase();
+        const action = eventType.includes('INSERT') || eventType === 'SNAPSHOT_INICIAL'
           ? 'cargó'
-          : item.event_type === 'UPDATE'
+          : eventType.includes('UPDATE')
             ? 'editó'
-            : item.event_type === 'DELETE'
+            : eventType.includes('DELETE')
               ? 'eliminó'
               : 'modificó';
 
@@ -907,7 +914,7 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
       <div className="resultsTable">
         {participantRows.map((row) => (
           <div key={row.participant.id} className="resultRow">
-            <span>{row.count}/16</span>
+            <span>{row.count}/{totalMatches}</span>
             <strong>{row.participant.name}</strong>
             <em>
               {row.count === 0
@@ -1191,12 +1198,21 @@ function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, u
                   const matchNo = round.start + idx;
                   const match = byMatchNo.get(matchNo);
 
-                  if (round.id !== 'r32') {
-                    const base = round.id === 'r16' ? idx * 2 + 1 : round.id === 'qf' ? 17 + idx * 2 : round.id === 'sf' ? 25 + idx * 2 : 29;
-                    return <BracketPlaceholder key={`${round.id}-${idx}`} label={`Ganador partido ${base}`} />;
-                  }
+                  if (!match) {
+                    const base = round.id === 'r16'
+                      ? idx * 2 + 1
+                      : round.id === 'qf'
+                        ? 17 + idx * 2
+                        : round.id === 'sf'
+                          ? 25 + idx * 2
+                          : 29;
 
-                  if (!match) return <BracketPlaceholder key={`missing-${matchNo}`} label={`Partido ${matchNo}`} />;
+                    const label = round.id === 'r32'
+                      ? `Partido ${matchNo}`
+                      : `Ganador partido ${base}`;
+
+                    return <BracketPlaceholder key={`missing-${matchNo}`} label={label} />;
+                  }
 
                   return mode === 'admin' ? (
                     <MatchCardAdmin
@@ -1509,7 +1525,7 @@ function PublicApp() {
       <RulesPanel />
 
       <nav className="tabs">
-        <button className={tab === 'cargar' ? 'active' : ''} onClick={() => setTab('cargar')}>Cargar llave</button>
+        <button className={tab === 'cargar' ? 'active' : ''} onClick={() => setTab('cargar')}>Cargar 8vos</button>
         <button className={tab === 'ranking' ? 'active' : ''} onClick={() => setTab('ranking')}>Ranking</button>
         <button className={tab === 'transparencia' ? 'active' : ''} onClick={() => setTab('transparencia')}>Transparencia</button>
         <button className={tab === 'resultados' ? 'active' : ''} onClick={() => setTab('resultados')}>Resultados</button>
@@ -1631,8 +1647,8 @@ function PublicApp() {
           {accessGranted && (
             <form className="panel formPanel" onSubmit={submitPredictions}>
               <div className="sectionTitle">
-                <h2>Llave mundialista</h2>
-                <p>Poné tu resultado. Si pronosticás empate, elegí quién avanza y podés cargar penales para sumar extra.</p>
+                <h2>Prode 8vos de final</h2>
+                <p>Poné tus resultados de 8vos. Si pronosticás empate, elegí quién avanza y podés cargar penales para sumar extra.</p>
               </div>
 
               <BracketBoard
