@@ -196,6 +196,23 @@ function getStartsAtDate(match) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function hasMatchStarted(match) {
+  const starts = getStartsAtDate(match);
+  return starts ? Date.now() >= starts.getTime() : false;
+}
+
+function canShowPredictionPublic(match) {
+  if (!match) return false;
+
+  // Los prodes se hacen públicos cuando el partido ya empezó.
+  if (hasMatchStarted(match)) return true;
+
+  // También se muestran si el admin ya cargó resultado real.
+  if (match.real_a !== null || match.real_b !== null) return true;
+
+  return false;
+}
+
 function predictionClosesAt(match) {
   const starts = getStartsAtDate(match);
   return starts ? new Date(starts.getTime() - 60 * 60 * 1000) : null;
@@ -698,8 +715,9 @@ function RankingPanel({ participants, predictions, matches, settings }) {
       .map((prediction) => {
         const match = matches.find((m) => m.id === prediction.match_id);
 
-        // Privacidad: no mostramos el prode hasta que el admin cargue el resultado real.
-        if (!match || match.real_a === null || match.real_b === null) return null;
+        // Privacidad: no mostramos el prode hasta que el partido empiece
+        // o hasta que el admin cargue el resultado real.
+        if (!canShowPredictionPublic(match)) return null;
 
         const result = scorePrediction(prediction, match);
 
@@ -810,7 +828,7 @@ function RankingPanel({ participants, predictions, matches, settings }) {
             <div className="sectionTitle">
               <div>
                 <h2>Pronósticos de {CURRENT_ROUND.label} de {selectedParticipant.name}</h2>
-                <p>Solo se muestran partidos de {CURRENT_ROUND.label} que ya tienen resultado real cargado.</p>
+                <p>Solo se muestran partidos de {CURRENT_ROUND.label} que ya empezaron o que ya tienen resultado real cargado.</p>
               </div>
               <button className="ghost" type="button" onClick={closeParticipantDetails}>
                 Cerrar
@@ -819,7 +837,7 @@ function RankingPanel({ participants, predictions, matches, settings }) {
 
             {visiblePredictions.length === 0 ? (
               <div className="status">
-                Todavía no hay pronósticos visibles de 8vos para este participante. Se van a mostrar cuando el admin cargue resultados reales de esta fase.
+                Todavía no hay pronósticos visibles de 8vos para este participante. Se van a mostrar cuando empiece cada partido.
               </div>
             ) : (
               <div className="resultsTable">
@@ -840,7 +858,13 @@ function RankingPanel({ participants, predictions, matches, settings }) {
                       <br />
                       Real: {formatResult(match)}
                       <br />
-                      <b>Sumó: {result.points} pts</b> · {result.label}
+                      {match.real_a !== null && match.real_b !== null ? (
+                        <>
+                          <b>Sumó: {result.points} pts</b> · {result.label}
+                        </>
+                      ) : (
+                        <b>Puntos pendientes hasta que el admin cargue el resultado real.</b>
+                      )}
                     </em>
                   </div>
                 ))}
@@ -910,7 +934,7 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
         team_a: item.team_a,
         team_b: item.team_b,
       };
-      const matchFinished = match?.real_a !== null && match?.real_a !== undefined && match?.real_b !== null && match?.real_b !== undefined;
+      const predictionIsPublic = canShowPredictionPublic(match);
       let title = '';
       let detail = '';
 
@@ -925,9 +949,9 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
               : 'modificó';
 
         title = `${item.participant_name || 'Participante'} ${action} su prode del Partido ${item.match_no}`;
-        detail = matchFinished
+        detail = predictionIsPublic
           ? `Prode visible: ${formatPredictionDataForAudit(item.new_data || item.old_data, match)}`
-          : 'Contenido oculto hasta que el admin cargue el resultado real de ese partido.';
+          : 'Contenido oculto hasta que empiece el partido.';
       } else if (item.table_name === 'matches') {
         title = `Admin cargó o modificó el resultado real del Partido ${item.match_no}`;
         detail = `Resultado: ${formatRealResultDataForAudit(item.new_data, match)}`;
@@ -944,7 +968,7 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
     <section className="panel">
       <div className="sectionTitle">
         <h2>Transparencia de cargas - {CURRENT_ROUND.label}</h2>
-        <p>Todos pueden ver cuándo quedó guardado cada prode de {CURRENT_ROUND.label}. Los resultados elegidos se muestran recién cuando el partido ya tiene resultado real cargado.</p>
+        <p>Todos pueden ver cuándo quedó guardado cada prode de {CURRENT_ROUND.label}. Los resultados elegidos se muestran recién cuando empieza cada partido.</p>
       </div>
 
       <div className="resultsTable">
