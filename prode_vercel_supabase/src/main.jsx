@@ -16,12 +16,12 @@ const ROUNDS = [
 ];
 
 const CURRENT_ROUND = {
-  id: 'r16',
-  title: '8vos de final',
-  label: '8vos',
-  start: 17,
-  end: 24,
-  count: 8,
+  id: 'final_stage',
+  title: '4tos hasta la final',
+  label: '4tos a Final',
+  start: 25,
+  end: 31,
+  count: 7,
 };
 
 function isCurrentRoundMatch(match) {
@@ -631,8 +631,8 @@ function Header({ admin = false }) {
       <div className="heroGlow"></div>
       <div className="heroText">
         <p className="eyebrow">🏆 Familia · Mundial · Prode</p>
-        <h1>{admin ? 'Panel Admin' : 'Prode 8vos'}</h1>
-        <p>{admin ? 'Cargá los resultados reales, penales y clasificados.' : 'Completá tus 8vos de final y peleá el ranking familiar en vivo.'}</p>
+        <h1>{admin ? 'Panel Admin' : 'Prode 4tos hasta la final'}</h1>
+        <p>{admin ? 'Cargá los resultados reales, penales y clasificados.' : 'Completá tus pronósticos desde cuartos hasta la final y peleá el ranking familiar en vivo.'}</p>
         <div className="rules">
           <span>Partido: +6 o +3</span>
           <span>Penales suman extra</span>
@@ -743,7 +743,7 @@ function RankingPanel({ participants, predictions, matches, settings }) {
     <section className="panel rankingPanel">
       <div className="sectionTitle">
         <h2>Ranking {CURRENT_ROUND.label} <PointsTooltip /></h2>
-        <p>Los puntos de 16avos quedan como historial. En {CURRENT_ROUND.label}, todos arrancan de 0.</p>
+        <p>Los puntos de 16avos y 8vos quedan como historial. En {CURRENT_ROUND.label}, todos arrancan de 0.</p>
       </div>
 
       {prizeSettings.prize_enabled && (
@@ -837,7 +837,7 @@ function RankingPanel({ participants, predictions, matches, settings }) {
 
             {visiblePredictions.length === 0 ? (
               <div className="status">
-                Todavía no hay pronósticos visibles de 8vos para este participante. Se van a mostrar cuando empiece cada partido.
+                Todavía no hay pronósticos visibles de esta etapa para este participante. Se van a mostrar cuando empiece cada partido.
               </div>
             ) : (
               <div className="resultsTable">
@@ -978,7 +978,7 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
             <strong>{row.participant.name}</strong>
             <em>
               {row.count === 0
-                ? 'Todavía no registró pronósticos de 8vos.'
+                ? 'Todavía no registró pronósticos de esta etapa.'
                 : `Primera carga: ${formatAuditTimestamp(row.first)} · Última modificación: ${formatAuditTimestamp(row.last)}`}
             </em>
           </div>
@@ -995,7 +995,7 @@ function TransparencyPanel({ participants, predictions, matches, auditLog }) {
           <div className="resultRow">
             <span>—</span>
             <strong>Sin movimientos nuevos auditados</strong>
-            <em>Cuando alguien edite un prode de 8vos o el admin cargue un resultado real de esta fase, aparecerá acá.</em>
+            <em>Cuando alguien edite un prode de esta etapa o el admin cargue un resultado real, aparecerá acá.</em>
           </div>
         )}
 
@@ -1580,7 +1580,7 @@ function PublicApp() {
     }
 
     window.localStorage.setItem('prode_nombre', participant.name || name.trim());
-    setStatus('¡Listo! Tu prode de 8vos quedó guardado. Podés volver a entrar con tu nombre y código.');
+    setStatus('¡Listo! Tu prode de 4tos hasta la final quedó guardado. Podés volver a entrar con tu nombre y código.');
     await loadAll();
     setTab('ranking');
   }
@@ -1591,7 +1591,7 @@ function PublicApp() {
       <RulesPanel />
 
       <nav className="tabs">
-        <button className={tab === 'cargar' ? 'active' : ''} onClick={() => setTab('cargar')}>Cargar 8vos</button>
+        <button className={tab === 'cargar' ? 'active' : ''} onClick={() => setTab('cargar')}>Cargar 4tos a Final</button>
         <button className={tab === 'ranking' ? 'active' : ''} onClick={() => setTab('ranking')}>Ranking</button>
         <button className={tab === 'transparencia' ? 'active' : ''} onClick={() => setTab('transparencia')}>Transparencia</button>
         <button className={tab === 'resultados' ? 'active' : ''} onClick={() => setTab('resultados')}>Resultados</button>
@@ -1713,8 +1713,8 @@ function PublicApp() {
           {accessGranted && (
             <form className="panel formPanel" onSubmit={submitPredictions}>
               <div className="sectionTitle">
-                <h2>Prode 8vos de final</h2>
-                <p>Poné tus resultados de 8vos. Si pronosticás empate, elegí quién avanza y podés cargar penales para sumar extra.</p>
+                <h2>Prode 4tos hasta la final</h2>
+                <p>Poné tus resultados desde cuartos hasta la final. Si pronosticás empate, elegí quién avanza y podés cargar penales para sumar extra.</p>
               </div>
 
               <BracketBoard
