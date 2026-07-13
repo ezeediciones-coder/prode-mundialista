@@ -13,15 +13,16 @@ const ROUNDS = [
   { id: 'qf', title: 'Cuartos de final', count: 4, start: 25 },
   { id: 'sf', title: 'Semifinales', count: 2, start: 29 },
   { id: 'final', title: 'Final', count: 1, start: 31 },
+  { id: 'third', title: 'Tercer puesto', count: 1, start: 32 },
 ];
 
 const CURRENT_ROUND = {
   id: 'final_stage',
-  title: '4tos hasta la final',
-  label: '4tos a Final',
+  title: '4tos hasta la final + tercer puesto',
+  label: '4tos a Final + 3er Puesto',
   start: 25,
-  end: 31,
-  count: 7,
+  end: 32,
+  count: 8,
 };
 
 function isCurrentRoundMatch(match) {
@@ -631,8 +632,8 @@ function Header({ admin = false }) {
       <div className="heroGlow"></div>
       <div className="heroText">
         <p className="eyebrow">🏆 Familia · Mundial · Prode</p>
-        <h1>{admin ? 'Panel Admin' : 'Prode 4tos hasta la final'}</h1>
-        <p>{admin ? 'Cargá los resultados reales, penales y clasificados.' : 'Completá tus pronósticos desde cuartos hasta la final y peleá el ranking familiar en vivo.'}</p>
+        <h1>{admin ? 'Panel Admin' : 'Prode 4tos hasta la final + 3er puesto'}</h1>
+        <p>{admin ? 'Cargá los resultados reales, penales y clasificados.' : 'Completá tus pronósticos desde cuartos hasta la final y el tercer puesto para pelear el ranking familiar en vivo.'}</p>
         <div className="rules">
           <span>Partido: +6 o +3</span>
           <span>Penales suman extra</span>
@@ -1269,7 +1270,9 @@ function BracketBoard({ matches, mode, formScores, updateScore, updateAdvance, u
 
                     const label = round.id === 'r32'
                       ? `Partido ${matchNo}`
-                      : `Ganador partido ${base}`;
+                      : round.id === 'third'
+                        ? `Perdedor partido ${base}`
+                        : `Ganador partido ${base}`;
 
                     return <BracketPlaceholder key={`missing-${matchNo}`} label={label} />;
                   }
@@ -1580,7 +1583,7 @@ function PublicApp() {
     }
 
     window.localStorage.setItem('prode_nombre', participant.name || name.trim());
-    setStatus('¡Listo! Tu prode de 4tos hasta la final quedó guardado. Podés volver a entrar con tu nombre y código.');
+    setStatus('¡Listo! Tu prode de 4tos hasta la final + tercer puesto quedó guardado. Podés volver a entrar con tu nombre y código.');
     await loadAll();
     setTab('ranking');
   }
@@ -1591,7 +1594,7 @@ function PublicApp() {
       <RulesPanel />
 
       <nav className="tabs">
-        <button className={tab === 'cargar' ? 'active' : ''} onClick={() => setTab('cargar')}>Cargar 4tos a Final</button>
+        <button className={tab === 'cargar' ? 'active' : ''} onClick={() => setTab('cargar')}>Cargar etapa final</button>
         <button className={tab === 'ranking' ? 'active' : ''} onClick={() => setTab('ranking')}>Ranking</button>
         <button className={tab === 'transparencia' ? 'active' : ''} onClick={() => setTab('transparencia')}>Transparencia</button>
         <button className={tab === 'resultados' ? 'active' : ''} onClick={() => setTab('resultados')}>Resultados</button>
@@ -1713,8 +1716,8 @@ function PublicApp() {
           {accessGranted && (
             <form className="panel formPanel" onSubmit={submitPredictions}>
               <div className="sectionTitle">
-                <h2>Prode 4tos hasta la final</h2>
-                <p>Poné tus resultados desde cuartos hasta la final. Si pronosticás empate, elegí quién avanza y podés cargar penales para sumar extra.</p>
+                <h2>Prode 4tos hasta la final + tercer puesto</h2>
+                <p>Poné tus resultados desde cuartos hasta la final y el tercer puesto. Si pronosticás empate, elegí quién gana/avanza y podés cargar penales para sumar extra.</p>
               </div>
 
               <BracketBoard
@@ -2335,7 +2338,8 @@ function AdminApp() {
 }
 
 function Router() {
-  const isAdmin = window.location.pathname.replace(/\/$/, '') === '/admin';
+  const path = window.location.pathname.replace(/\/$/, '').toLowerCase();
+  const isAdmin = path === '/admin';
   return isAdmin ? <AdminApp /> : <PublicApp />;
 }
 
